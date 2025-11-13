@@ -12,4 +12,8 @@ crate-type = ["cdylib", "rlib"]
 candid = "0.10.19"
 ic-cdk = "0.17"
 ic-llm = "1.1.0"
-serde = { version = "1.0.9", features = ["derive"] } 
+serde = { version = "1.0.9", features = ["derive"] }
+lopdf = { version = "0.32" }
+image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
+jpeg-encoder = "0.6"
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }

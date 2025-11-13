@@ -1,7 +1,10 @@
 use candid::{CandidType, Deserialize};
+use ic_llm::Model;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use ic_llm::Model;
+
+mod pdf;
+use pdf::PdfCompressor;
 
 // Types for the API
 #[derive(CandidType, Deserialize, Clone, Debug)]
@@ -99,6 +102,14 @@ fn generate_job_id() -> String {
         *counter
     });
     format!("job_{:016}", counter)
+}
+
+/// Compress a PDF with the provided quality (1-100).
+#[ic_cdk::update]
+fn compress_pdf(pdf_bytes: Vec<u8>, quality: u8) -> Result<Vec<u8>, String> {
+    let quality = quality.clamp(1, 100);
+    let compressor = PdfCompressor::new(quality);
+    compressor.compress(pdf_bytes)
 }
 
 /// Get a quote for processing a request
