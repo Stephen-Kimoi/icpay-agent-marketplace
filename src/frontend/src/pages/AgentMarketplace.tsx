@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, FileSpreadsheet, Sparkles, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 
 type AgentCategory = "All" | "File Tools" | "Text Tools" | "Data Tools";
 
@@ -38,6 +39,7 @@ const categories: AgentCategory[] = ["All", "File Tools", "Text Tools", "Data To
 export default function AgentMarketplace() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<AgentCategory>("All");
+  const navigate = useNavigate();
 
   const filteredAgents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -53,7 +55,7 @@ export default function AgentMarketplace() {
   }, [searchTerm, selectedCategory]);
 
   const handleLaunch = (agentId: string) => {
-    window.location.href = `/agent/${agentId}`;
+    navigate(`/agent/${agentId}`);
   };
 
   return (
@@ -79,19 +81,18 @@ export default function AgentMarketplace() {
           </div>
           <h1 className="text-4xl font-bold sm:text-5xl lg:text-6xl">
             <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
-              IC Pay Agent Marketplace
+              Autonomous Agent Marketplace
             </span>
           </h1>
           <p className="mt-4 text-lg text-gray-400">
-            Pay-per-use AI Agents powered by
-            {" "}
+            Pay-per-use AI Agents powered by{" "}
             <a
               href="https://icpay.org"
               target="_blank"
               rel="noopener noreferrer"
               className="text-purple-300 hover:text-purple-200"
             >
-              icpay
+              ICPay
             </a>
           </p>
           <a
