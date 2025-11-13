@@ -51,6 +51,7 @@ impl PdfCompressor {
 
     /// Compress an in-memory PDF and return the resulting bytes.
     pub fn compress(&self, input_pdf: Vec<u8>) -> Result<Vec<u8>, String> {
+        ic_cdk::println!("Compressing PDF...");
         let mut doc = Document::load_mem(&input_pdf)
             .map_err(|e| format!("Failed to load PDF: {}", e))?;
 
@@ -68,10 +69,12 @@ impl PdfCompressor {
         doc.save_to(&mut buffer)
             .map_err(|e| format!("Failed to save PDF: {}", e))?;
 
+        ic_cdk::println!("PDF compressed successfully");
         Ok(buffer)
     }
 
     fn compress_pdf_images(&self, doc: &mut Document) -> Result<(), String> {
+        ic_cdk::println!("Compressing PDF images...");
         let object_ids: Vec<ObjectId> = doc.objects.keys().cloned().collect();
 
         for object_id in object_ids {
@@ -93,7 +96,8 @@ impl PdfCompressor {
                 }
             }
         }
-
+        
+        ic_cdk::println!("PDF images compressed successfully");
         Ok(())
     }
 

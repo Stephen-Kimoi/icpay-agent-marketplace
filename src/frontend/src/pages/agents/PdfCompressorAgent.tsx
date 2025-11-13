@@ -1,17 +1,128 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
+  AlertCircle,
   CheckCircle2,
+  DownloadCloud,
   FileText,
   Gauge,
+  Loader2,
   UploadCloud,
   Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { compressPdf } from "@/services/pdfService";
+import { CompressionStats } from "@/types/pdf";
+
+const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  const value = bytes / Math.pow(k, i);
+  const decimals = value >= 10 || i === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${sizes[i]}`;
+};
 
 export default function PdfCompressorAgent() {
   const [compressionLevel, setCompressionLevel] = useState(70);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [compressionStats, setCompressionStats] = useState<CompressionStats | null>(null);
+  const [compressedUrl, setCompressedUrl] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (compressedUrl) {
+        URL.revokeObjectURL(compressedUrl);
+      }
+    };
+  }, [compressedUrl]);
+
+  const resetResult = () => {
+    setCompressionStats(null);
+    if (compressedUrl) {
+      URL.revokeObjectURL(compressedUrl);
+      setCompressedUrl(null);
+    }
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const [file] = Array.from(files).filter((item) => item.type === "application/pdf");
+    if (!file) {
+      setError("Please upload a PDF file.");
+      return;
+    }
+
+    resetResult();
+    setSelectedFile(file);
+    setError(null);
+  };
+
+  const handleBrowseClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    handleFiles(event.dataTransfer.files);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!isDragging) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleCompress = async () => {
+    if (!selectedFile) {
+      setError("Please select a PDF file to compress.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const { bytes, stats } = await compressPdf(selectedFile, compressionLevel);
+      const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+      if (compressedUrl) {
+        URL.revokeObjectURL(compressedUrl);
+      }
+      const url = URL.createObjectURL(blob);
+      setCompressedUrl(url);
+      setCompressionStats(stats);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to compress PDF. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!compressedUrl || !selectedFile) return;
+
+    const anchor = document.createElement("a");
+    anchor.href = compressedUrl;
+    const baseName = selectedFile.name.replace(/\.pdf$/i, "");
+    anchor.download = `${baseName || "compressed-document"}-compressed.pdf`;
+    anchor.click();
+  };
+
+  const effectiveQuality = compressionLevel;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
@@ -74,15 +185,49 @@ export default function PdfCompressorAgent() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 p-8 text-center transition hover:border-purple-500/50 hover:bg-gray-900/70">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(event) => handleFiles(event.target.files)}
+            />
+
+            <div
+              onClick={handleBrowseClick}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              className={`mt-6 rounded-2xl border border-dashed p-8 text-center transition ${
+                isDragging
+                  ? "border-purple-500/70 bg-purple-500/10"
+                  : "border-gray-700 bg-gray-900/50 hover:border-purple-500/50 hover:bg-gray-900/70"
+              }`}
+            >
               <UploadCloud className="mx-auto h-10 w-10 text-purple-300" />
               <p className="mt-4 text-sm text-gray-300">
-                Drop files here or <span className="text-purple-300">browse</span>
+                Drop files here or{" "}
+                <span className="text-purple-300 underline underline-offset-4">browse</span>
               </p>
               <p className="text-xs text-gray-500">
-                Supported formats: PDF, PDF/A
+                Supported formats: PDF, PDF/A — max 250 MB per file
               </p>
+              {selectedFile && (
+                <div className="mt-6 rounded-xl border border-gray-800/60 bg-gray-900/70 p-4 text-left">
+                  <p className="text-sm font-medium text-gray-200">{selectedFile.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {formatBytes(selectedFile.size)} · Quality target: {effectiveQuality}%
+                  </p>
+                </div>
+              )}
             </div>
+
+            {error && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+                <AlertCircle className="h-4 w-4 text-red-300" />
+                <span>{error}</span>
+              </div>
+            )}
 
             <div className="mt-8 grid gap-6 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6">
               <div className="flex items-center justify-between gap-4">
@@ -138,10 +283,67 @@ export default function PdfCompressorAgent() {
                 <CheckCircle2 className="h-5 w-5 text-green-400" />
                 <span>Secure processing inside ICP canisters</span>
               </div>
-              <Button className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500">
-                Continue to Payment
+              <Button
+                onClick={handleCompress}
+                disabled={!selectedFile || isProcessing}
+                className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isProcessing ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Compressing...
+                  </span>
+                ) : (
+                  "Compress & Preview"
+                )}
               </Button>
             </div>
+
+            {compressionStats && compressedUrl && (
+              <div className="mt-8 rounded-3xl border border-purple-500/30 bg-purple-500/5 p-6 text-sm text-purple-100">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm font-semibold text-white">Compression Summary</p>
+                    <div className="text-xs text-purple-200/80">
+                      <p>
+                        Original size:{" "}
+                        <span className="font-semibold text-purple-100">
+                          {formatBytes(compressionStats.originalBytes)}
+                        </span>
+                      </p>
+                      <p>
+                        Compressed size:{" "}
+                        <span className="font-semibold text-purple-100">
+                          {formatBytes(compressionStats.compressedBytes)}
+                        </span>
+                      </p>
+                      <p>
+                        Reduction:{" "}
+                        <span className="font-semibold text-purple-100">
+                          {Math.max(
+                            0,
+                            100 -
+                              Math.round(
+                                (compressionStats.compressedBytes /
+                                  Math.max(compressionStats.originalBytes, 1)) *
+                                  100
+                              )
+                          )}
+                          %
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleDownload}
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500"
+                  >
+                    <DownloadCloud className="h-4 w-4" />
+                    Download PDF
+                  </Button>
+                </div>
+              </div>
+            )}
           </section>
 
           <aside className="flex flex-col gap-6 rounded-3xl border border-gray-800/70 bg-gray-950/70 p-8 backdrop-blur-xl">
@@ -180,4 +382,5 @@ export default function PdfCompressorAgent() {
     </div>
   );
 }
+
 
