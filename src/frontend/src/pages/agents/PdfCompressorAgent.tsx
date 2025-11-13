@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
@@ -12,8 +12,18 @@ import {
   Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+// @ts-ignore - ICPay widget types may not be fully resolved
+import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
 import { compressPdf } from "@/services/pdfService";
 import { CompressionStats } from "@/types/pdf";
+import { usePaymentFlow } from "@/hooks/usePaymentFlow";
+
+type CompressionResult = {
+  stats: CompressionStats;
+  url: string;
+  filename: string;
+  mimeType: string;
+};
 
 const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -28,28 +38,54 @@ const formatBytes = (bytes: number): string => {
 export default function PdfCompressorAgent() {
   const [compressionLevel, setCompressionLevel] = useState(70);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [compressionStats, setCompressionStats] = useState<CompressionStats | null>(null);
-  const [compressedUrl, setCompressedUrl] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previousUrlRef = useRef<string | null>(null);
+
+  const {
+    state,
+    quote,
+    paymentResult,
+    result,
+    error,
+    loading,
+    isProcessing,
+    icpayConfig,
+    requestQuote,
+    handlePaymentSuccess,
+    handlePaymentError,
+    reset,
+    setError,
+  } = usePaymentFlow<CompressionResult>();
+
+  const compressionStats = result?.stats ?? null;
+  const completed = state === "completed";
 
   useEffect(() => {
     return () => {
-      if (compressedUrl) {
-        URL.revokeObjectURL(compressedUrl);
+      if (previousUrlRef.current) {
+        URL.revokeObjectURL(previousUrlRef.current);
+        previousUrlRef.current = null;
       }
     };
-  }, [compressedUrl]);
+  }, []);
+
+  useEffect(() => {
+    if (result?.url && result.url !== previousUrlRef.current) {
+      if (previousUrlRef.current) {
+        URL.revokeObjectURL(previousUrlRef.current);
+      }
+      previousUrlRef.current = result.url;
+    }
+  }, [result]);
 
   const resetResult = () => {
-    setCompressionStats(null);
-    if (compressedUrl) {
-      URL.revokeObjectURL(compressedUrl);
-      setCompressedUrl(null);
+    if (previousUrlRef.current) {
+      URL.revokeObjectURL(previousUrlRef.current);
+      previousUrlRef.current = null;
     }
+    reset();
   };
 
   const handleFiles = (files: FileList | null) => {
@@ -87,37 +123,51 @@ export default function PdfCompressorAgent() {
     setIsDragging(false);
   };
 
-  const handleCompress = async () => {
+  const quoteDescription = useMemo(() => {
+    if (!selectedFile) return "";
+    return [
+      `Compress PDF "${selectedFile.name}"`,
+      `Size: ${formatBytes(selectedFile.size)} (${selectedFile.size} bytes)`,
+      `Quality target: ${compressionLevel}%`,
+    ].join(" | ");
+  }, [selectedFile, compressionLevel]);
+
+  const handleQuoteRequest = async () => {
     if (!selectedFile) {
       setError("Please select a PDF file to compress.");
       return;
     }
 
-    setIsProcessing(true);
     setError(null);
 
-    try {
-      const { bytes, stats } = await compressPdf(selectedFile, compressionLevel);
-      const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
-      if (compressedUrl) {
-        URL.revokeObjectURL(compressedUrl);
-      }
-      const url = URL.createObjectURL(blob);
-      setCompressedUrl(url);
-      setCompressionStats(stats);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to compress PDF. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
+    await requestQuote({
+      request: quoteDescription,
+      execute: async () => {
+        if (!selectedFile) {
+          throw new Error("File is no longer available.");
+        }
+        const { bytes, stats } = await compressPdf(selectedFile, compressionLevel);
+        const view = bytes as Uint8Array;
+        const bufferCopy = new ArrayBuffer(view.byteLength);
+        new Uint8Array(bufferCopy).set(view);
+        const blob = new Blob([bufferCopy], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        return {
+          stats,
+          url,
+          filename: selectedFile.name,
+          mimeType: blob.type,
+        };
+      },
+    });
   };
 
   const handleDownload = () => {
-    if (!compressedUrl || !selectedFile) return;
+    if (!result?.url) return;
 
     const anchor = document.createElement("a");
-    anchor.href = compressedUrl;
-    const baseName = selectedFile.name.replace(/\.pdf$/i, "");
+    anchor.href = result.url;
+    const baseName = result.filename.replace(/\.pdf$/i, "");
     anchor.download = `${baseName || "compressed-document"}-compressed.pdf`;
     anchor.click();
   };
@@ -284,22 +334,79 @@ export default function PdfCompressorAgent() {
                 <span>Secure processing inside ICP canisters</span>
               </div>
               <Button
-                onClick={handleCompress}
-                disabled={!selectedFile || isProcessing}
+                onClick={handleQuoteRequest}
+                disabled={!selectedFile || loading || isProcessing}
                 className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isProcessing ? (
+                {loading ? (
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Compressing...
+                    Getting Quote...
                   </span>
+                ) : state === "quoted" ? (
+                  "Refresh Quote"
                 ) : (
-                  "Compress & Preview"
+                  "Get Compression Quote"
                 )}
               </Button>
             </div>
 
-            {compressionStats && compressedUrl && (
+            {quote && state !== "completed" && (
+              <div className="mt-6 rounded-2xl border border-purple-500/40 bg-purple-500/10 p-5 text-sm text-purple-100">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-purple-300/70">
+                      Quoted Price
+                    </p>
+                    <p className="text-2xl font-semibold text-purple-100">
+                      {quote.price} {quote.currency}
+                    </p>
+                  </div>
+                  {paymentResult && (
+                    <div className="text-xs text-purple-200/70">
+                      Last transaction:{" "}
+                      <span className="font-mono">{paymentResult.transactionId}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {state === "quoted" && icpayConfig && (
+              <div className="mt-4 flex justify-end">
+                <IcpayPayButton
+                  config={icpayConfig}
+                  onSuccess={handlePaymentSuccess}
+                  onError={handlePaymentError}
+                />
+              </div>
+            )}
+
+            {state === "waiting_for_payment" && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Awaiting ICPay settlement...</span>
+              </div>
+            )}
+
+            {state === "executing" && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-500/10 p-4 text-sm text-blue-100">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Executing compression in the canister...</span>
+              </div>
+            )}
+
+            {paymentResult && completed && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-green-500/40 bg-green-500/10 p-4 text-sm text-green-100">
+                <CheckCircle2 className="h-4 w-4 text-green-300" />
+                <span>
+                  Payment confirmed. Transaction ID:{" "}
+                  <span className="font-mono">{paymentResult.transactionId}</span>
+                </span>
+              </div>
+            )}
+
+            {compressionStats && result?.url && (
               <div className="mt-8 rounded-3xl border border-purple-500/30 bg-purple-500/5 p-6 text-sm text-purple-100">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex flex-col gap-2">
@@ -334,13 +441,22 @@ export default function PdfCompressorAgent() {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    onClick={handleDownload}
-                    className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500"
-                  >
-                    <DownloadCloud className="h-4 w-4" />
-                    Download PDF
-                  </Button>
+                  <div className="flex flex-col items-end gap-3">
+                    <Button
+                      onClick={handleDownload}
+                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500"
+                    >
+                      <DownloadCloud className="h-4 w-4" />
+                      Download PDF
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={resetResult}
+                      className="text-xs text-purple-200/70 underline underline-offset-4 hover:text-purple-100"
+                    >
+                      Start new compression
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

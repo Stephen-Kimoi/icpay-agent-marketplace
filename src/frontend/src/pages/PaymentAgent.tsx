@@ -1,114 +1,45 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, Clock, Sparkles } from "lucide-react";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
-import { PaymentState, PaymentResult, JobResult } from "@/types/payment";
-import { Quote } from "@/types/quote";
-import { getQuote } from "@/services/quoteService";
-import {
-  createICPayConfig,
-  handlePaymentSuccess as icpayHandlePaymentSuccess,
-  handlePaymentError as icpayHandlePaymentError,
-} from "@/services/icpayService";
-import { initiatePayment, completePayment, executeJob } from "@/services/jobService";
-  
+import { JobResult } from "@/types/payment";
+import { executeJob } from "@/services/jobService";
+import { usePaymentFlow } from "@/hooks/usePaymentFlow";
+
 export default function PaymentAgent() {
   const [userRequest, setUserRequest] = useState("");
-  const [state, setState] = useState<PaymentState>("idle");
-  const [quote, setQuote] = useState<Quote | null>(null);
-  const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
-  const [jobResult, setJobResult] = useState<JobResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const {
+    state,
+    quote,
+    paymentResult,
+    result: jobResult,
+    error,
+    loading,
+    isProcessing,
+    icpayConfig,
+    requestQuote,
+    handlePaymentSuccess,
+    handlePaymentError,
+    reset,
+    setError,
+  } = usePaymentFlow<JobResult>();
 
   const handleGetQuote = async (): Promise<void> => {
     if (!userRequest.trim()) {
       setError("Please enter a request");
       return;
     }
-    setError(null);
-    setState("idle");
-    setQuote(null);
-    setPaymentResult(null);
-    setJobResult(null);
-    setLoading(true);
-    
-    try {
-      const quoteDataFromBackend = await getQuote(userRequest);
 
-      setQuote(quoteDataFromBackend);
-      
-      // Initiate payment in backend
-      try {
-        await initiatePayment(quoteDataFromBackend.job_id);
-      } catch (err) {
-        console.warn("Payment initiation warning:", err);
-        // Continue even if payment initiation fails (might already exist)
-      }
-      
-      setState("quoted");
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to get quote. Please try again.");
-      setState("error");
-    } finally {
-      setLoading(false);
-    }
+    await requestQuote({
+      request: userRequest,
+      execute: (jobId) => executeJob(jobId),
+    });
   };
-
-  const handlePaymentSuccess = async (detail: any): Promise<void> => {
-    try {
-      const result = icpayHandlePaymentSuccess(detail);
-      // const result = {
-      //   transactionId: "1234567890",
-      //   success: true,
-      // };
-      setPaymentResult(result);
-      setState("waiting_for_payment");
-      setError(null);
-      
-      // Complete payment in backend first
-      if (!quote) {
-        setError("Quote not found. Cannot complete payment.");
-        setState("error");
-        return;
-      }
-      
-      await completePayment(String(quote.job_id), result.transactionId);
-      
-      // Now execute the job
-      setState("executing");
-      const jobResult = await executeJob(quote.job_id);
-      
-      setJobResult(jobResult);
-      setState("completed");
-      setError(null);
-    } catch (err) {
-      console.error("Error in payment success flow:", err);
-      setError(err instanceof Error ? err.message : "Failed to complete payment or execute job. Please try again.");
-      setState("error");
-    }
-  };
-
-  const handlePaymentError = (error: unknown): void => {
-    const errorMessage = icpayHandlePaymentError(error);
-    setError(errorMessage);
-    setState("error");
-  };
-
-  // Create ICPay config when quote is available
-  const icpayConfig = useMemo(() => {
-    return createICPayConfig(quote, userRequest);
-  }, [quote, userRequest]);
 
   const handleReset = (): void => {
     setUserRequest("");
-    setState("idle");
-    setQuote(null);
-    setPaymentResult(null);
-    setJobResult(null);
-    setError(null);
+    reset();
   };
 
   const getStepStatus = (step: number): string => {
@@ -127,7 +58,6 @@ export default function PaymentAgent() {
     return "completed";
   };
 
-  const isProcessing = state === "executing" || loading;
   const isPaymentPending = false;
 
   return (
