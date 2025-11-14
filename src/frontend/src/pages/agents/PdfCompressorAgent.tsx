@@ -57,8 +57,7 @@ export default function PdfCompressorAgent() {
     handlePaymentError,
     reset,
     setError,
-    simulatePayment,
-  } = usePaymentFlow<CompressionResult>({ mockPrice: 0.01, mockPayment: true, mockCurrency: "ICP" });
+  } = usePaymentFlow<CompressionResult>();
 
   const compressionStats = result?.stats ?? null;
   const completed = state === "completed";
@@ -371,22 +370,11 @@ export default function PdfCompressorAgent() {
 
             {state === "quoted" && icpayConfig && (
               <div className="mt-4 flex justify-end">
-                {simulatePayment ? (
-                  <Button
-                    onClick={simulatePayment}
-                    className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold text-white shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500"
-                  >
-                    Mock Pay 0.01 ICP
-                  </Button>
-                ) : (
-                  icpayConfig && (
-                    <IcpayPayButton
-                      config={icpayConfig}
-                      onSuccess={handlePaymentSuccess}
-                      onError={handlePaymentError}
-                    />
-                  )
-                )}
+                <IcpayPayButton
+                  config={icpayConfig}
+                  onSuccess={handlePaymentSuccess}
+                  onError={handlePaymentError}
+                />
               </div>
             )}
 
