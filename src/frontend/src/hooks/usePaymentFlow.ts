@@ -18,6 +18,12 @@ interface QuoteRequest<T> {
   execute: ExecuteFn<T>;
 }
 
+interface UsePaymentFlowOptions {
+  mockPrice?: number;
+  mockPayment?: boolean;
+  mockCurrency?: string;
+}
+
 interface UsePaymentFlowReturn<T> {
   state: PaymentState;
   quote: Quote | null;
@@ -32,9 +38,13 @@ interface UsePaymentFlowReturn<T> {
   handlePaymentError: (error: unknown) => void;
   reset: () => void;
   setError: (message: string | null) => void;
+  simulatePayment?: () => Promise<void>;
 }
 
-export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
+export function usePaymentFlow<T>(
+  options?: UsePaymentFlowOptions
+): UsePaymentFlowReturn<T> {
+  const { mockPrice, mockPayment = false, mockCurrency = "ICP" } = options || {};
   const [state, setState] = useState<PaymentState>("idle");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
@@ -57,10 +67,16 @@ export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
 
       try {
         const quoteResponse = await getQuote(request);
-        setQuote(quoteResponse);
+        
+        // Override quote price if mock mode is enabled
+        const finalQuote = mockPayment && mockPrice !== undefined
+          ? { ...quoteResponse, price: mockPrice, currency: mockCurrency || "ICP" }
+          : quoteResponse;
+        
+        setQuote(finalQuote);
 
         try {
-          await initiatePayment(quoteResponse.job_id);
+          await initiatePayment(finalQuote.job_id);
         } catch (paymentInitError) {
           console.warn("Payment initiation warning:", paymentInitError);
         }
@@ -73,7 +89,7 @@ export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
         setLoading(false);
       }
     },
-    []
+    [mockPayment, mockPrice, mockCurrency]
   );
 
   const handlePaymentSuccess = useCallback(
@@ -124,6 +140,54 @@ export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
     setState("error");
   }, []);
 
+  const simulatePayment = useCallback(async () => {
+    if (!mockPayment) {
+      return;
+    }
+
+    if (!quote) {
+      setError("Quote not found. Cannot simulate payment.");
+      setState("error");
+      return;
+    }
+
+    const execute = executeRef.current;
+    if (!execute) {
+      setError("Execution handler not configured.");
+      setState("error");
+      return;
+    }
+
+    try {
+      // Simulate payment success
+      const mockPaymentResult: PaymentResult = {
+        transactionId: `mock-tx-${Date.now()}`,
+        success: true,
+      };
+
+      setPaymentResult(mockPaymentResult);
+      setState("waiting_for_payment");
+      setError(null);
+
+      await completePayment(String(quote.job_id), mockPaymentResult.transactionId);
+
+      setState("executing");
+
+      const executionResult = await execute(quote.job_id, quote);
+      setResult(executionResult);
+
+      setState("completed");
+    } catch (err) {
+      console.error("Error simulating payment or executing job:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to simulate payment or execute job. Please try again."
+      );
+      setState("error");
+    }
+  }, [mockPayment, quote, mockPrice, mockCurrency]);
+
   const reset = useCallback(() => {
     setState("idle");
     setQuote(null);
@@ -155,6 +219,7 @@ export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
     handlePaymentError,
     reset,
     setError,
+    simulatePayment: mockPayment ? simulatePayment : undefined,
   };
 }
 
