@@ -14,7 +14,7 @@ import {
 import { Link } from "react-router-dom";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
-import { compressPdf } from "@/services/pdfService";
+import { compressPdf, MAX_PDF_SIZE } from "@/services/pdfService";
 import { CompressionStats } from "@/types/pdf";
 import { usePaymentFlow } from "@/hooks/usePaymentFlow";
 
@@ -97,6 +97,14 @@ export default function PdfCompressorAgent() {
       return;
     }
 
+    if (file.size > MAX_PDF_SIZE) {
+      setError(
+        `File size (${formatBytes(file.size)}) exceeds maximum allowed size of ${formatBytes(MAX_PDF_SIZE)}.`
+      );
+      setSelectedFile(null);
+      return;
+    }
+
     resetResult();
     setSelectedFile(file);
     setError(null);
@@ -143,11 +151,11 @@ export default function PdfCompressorAgent() {
 
     await requestQuote({
       request: quoteDescription,
-      execute: async (jobId) => {
+      execute: async () => {
         if (!selectedFile) {
           throw new Error("File is no longer available.");
         }
-        const { bytes, stats } = await compressPdf(jobId, selectedFile, compressionLevel);
+        const { bytes, stats } = await compressPdf(selectedFile, compressionLevel);
         const view = bytes;
         const bufferCopy = new ArrayBuffer(view.byteLength);
         new Uint8Array(bufferCopy).set(view);
@@ -216,8 +224,7 @@ export default function PdfCompressorAgent() {
                   Upload your PDF batch
                 </h2>
                 <p className="mt-2 text-sm text-gray-400">
-                  Drag & drop up to 10 files or browse manually. Max 250 MB per
-                  file.
+                  Drag & drop or browse to upload a PDF file. Max 1 MB per file.
                 </p>
               </div>
               <div className="hidden sm:block rounded-full bg-purple-500/10 p-3">
@@ -250,7 +257,7 @@ export default function PdfCompressorAgent() {
                 <span className="text-purple-300 underline underline-offset-4">browse</span>
               </p>
               <p className="text-xs text-gray-500">
-                Supported formats: PDF, PDF/A — max 250 MB per file
+                Supported formats: PDF, PDF/A — max 1 MB per file
               </p>
               {selectedFile && (
                 <div className="mt-6 rounded-xl border border-gray-800/60 bg-gray-900/70 p-4 text-left">
@@ -362,7 +369,7 @@ export default function PdfCompressorAgent() {
               </div>
             )}
 
-            {state === "quoted" && (
+            {state === "quoted" && icpayConfig && (
               <div className="mt-4 flex justify-end">
                 {simulatePayment ? (
                   <Button
