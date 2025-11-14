@@ -57,7 +57,8 @@ export default function PdfCompressorAgent() {
     handlePaymentError,
     reset,
     setError,
-  } = usePaymentFlow<CompressionResult>();
+    simulatePayment,
+  } = usePaymentFlow<CompressionResult>({ mockPrice: 0.01, mockPayment: true, mockCurrency: "ICP" });
 
   const compressionStats = result?.stats ?? null;
   const completed = state === "completed";
@@ -142,12 +143,12 @@ export default function PdfCompressorAgent() {
 
     await requestQuote({
       request: quoteDescription,
-      execute: async () => {
+      execute: async (jobId) => {
         if (!selectedFile) {
           throw new Error("File is no longer available.");
         }
-        const { bytes, stats } = await compressPdf(selectedFile, compressionLevel);
-        const view = bytes as Uint8Array;
+        const { bytes, stats } = await compressPdf(jobId, selectedFile, compressionLevel);
+        const view = bytes;
         const bufferCopy = new ArrayBuffer(view.byteLength);
         new Uint8Array(bufferCopy).set(view);
         const blob = new Blob([bufferCopy], { type: "application/pdf" });
@@ -203,17 +204,6 @@ export default function PdfCompressorAgent() {
                 fidelity. Choose the compression profile, upload your files, and
                 receive a download link once ICPay confirms payment.
               </p>
-            </div>
-            <div className="mx-auto flex flex-col gap-4 rounded-2xl border border-purple-500/30 bg-purple-500/10 px-6 py-5 text-sm text-purple-200 shadow-[0_20px_60px_-30px_rgba(168,85,247,0.6)]">
-              <span className="text-xs uppercase tracking-widest text-purple-300/80">
-                Starting at
-              </span>
-              <span className="text-3xl font-semibold text-purple-100">
-                0.05 ICP
-              </span>
-              <span className="text-xs text-purple-200/70">
-                Pricing adapts by file size & compression intensity
-              </span>
             </div>
           </div>
         </header>
@@ -372,13 +362,24 @@ export default function PdfCompressorAgent() {
               </div>
             )}
 
-            {state === "quoted" && icpayConfig && (
+            {state === "quoted" && (
               <div className="mt-4 flex justify-end">
-                <IcpayPayButton
-                  config={icpayConfig}
-                  onSuccess={handlePaymentSuccess}
-                  onError={handlePaymentError}
-                />
+                {simulatePayment ? (
+                  <Button
+                    onClick={simulatePayment}
+                    className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold text-white shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500"
+                  >
+                    Mock Pay 0.01 ICP
+                  </Button>
+                ) : (
+                  icpayConfig && (
+                    <IcpayPayButton
+                      config={icpayConfig}
+                      onSuccess={handlePaymentSuccess}
+                      onError={handlePaymentError}
+                    />
+                  )
+                )}
               </div>
             )}
 
