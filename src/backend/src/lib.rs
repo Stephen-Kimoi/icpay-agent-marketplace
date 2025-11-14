@@ -63,9 +63,18 @@ thread_local! {
 
 // Calculate the cost based on request complexity using AI
 async fn calculate_cost(request: &str) -> f64 {
+    // Detect if this is a text summarization request
+    let is_summarization = request.to_lowercase().contains("summarize");
+    
+    let (min_price, max_price, default_price) = if is_summarization {
+        (0.1, 0.5, 0.3) // Text summarization: 0.1 - 0.5 ICP
+    } else {
+        (0.1, 2.0, 0.5) // Other requests: 0.1 - 2.0 ICP
+    };
+    
     let prompt = format!(
-        "Evaluate this request and determine a fair price for processing it. Consider the complexity, length, and computational requirements.\n\nIMPORTANT: Respond with ONLY a single decimal number between 0.1 and 2.0. Do not include any text, explanation, or other characters. Just the number.\n\nRequest: {}\n\nPrice:",
-        request
+        "Evaluate this request and determine a fair price for processing it. Consider the complexity, length, and computational requirements.\n\nIMPORTANT: Respond with ONLY a single decimal number between {} and {}. Do not include any text, explanation, or other characters. Just the number.\n\nRequest: {}\n\nPrice:",
+        min_price, max_price, request
     );
     
     ic_cdk::println!("Sending request to LLM: {}", prompt);
@@ -77,24 +86,24 @@ async fn calculate_cost(request: &str) -> f64 {
     ic_cdk::println!("Cleaned response: {}", cleaned);
 
     match cleaned.parse::<f64>() {
-        Ok(price) if price >= 0.1 && price <= 2.0 => {
-            ic_cdk::println!("Price {} is within valid range", price);
+        Ok(price) if price >= min_price && price <= max_price => {
+            ic_cdk::println!("Price {} is within valid range ({}-{})", price, min_price, max_price);
             // Round to 2 decimal places
             (price * 100.0).round() / 100.0
         }
         Ok(price) => {
             // Price out of range, clamp to valid range
-            ic_cdk::println!("Price {} out of range, clamping to 0.1-2.0", price);
-            if price < 0.1 {
-                0.1
+            ic_cdk::println!("Price {} out of range, clamping to {}-{}", price, min_price, max_price);
+            if price < min_price {
+                min_price
             } else {
-                2.0
+                max_price
             }
         }
         Err(_) => {
             // Fallback to default price if parsing fails
             ic_cdk::println!("Failed to parse price from LLM response: {}", response);
-            0.5
+            default_price
         }
     }
 }
