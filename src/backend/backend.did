@@ -22,6 +22,7 @@ type Result_2 = variant { Ok : blob; Err : text };
 type Result_3 = variant { Ok : JobResult; Err : text };
 type Result_4 = variant { Ok : Quote; Err : text };
 type Result_5 = variant { Ok : PaymentRequest; Err : text };
+type Result_6 = variant { Ok : text; Err : text };
 service : {
   // Check payment status for a job
   check_payment_status : (text) -> (Result) query;
@@ -39,4 +40,6 @@ service : {
   initiate_payment : (text) -> (Result_5);
   // Get all jobs (for debugging/admin)
   list_jobs : () -> (vec record { text; JobRequest }) query;
+  // Summarize text with the provided tone and options.
+  summarize_text : (text, text, bool) -> (Result_6);
 }

@@ -6,6 +6,9 @@ use std::collections::HashMap;
 mod pdf;
 use pdf::PdfCompressor;
 
+mod text_summarizer;
+use text_summarizer::{TextSummarizer, SummarizationOptions};
+
 // Types for the API
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct Quote {
@@ -111,6 +114,18 @@ fn compress_pdf(pdf_bytes: Vec<u8>, quality: u8) -> Result<Vec<u8>, String> {
     let quality = quality.clamp(1, 100);
     let compressor = PdfCompressor::new(quality);
     compressor.compress(pdf_bytes)
+}
+
+/// Summarize text with the provided tone and options.
+#[ic_cdk::update]
+async fn summarize_text(
+    text: String,
+    tone: String,
+    include_quotes: bool,
+) -> Result<String, String> {
+    let options = SummarizationOptions::new(tone, include_quotes);
+    let summarizer = TextSummarizer::new(options);
+    summarizer.summarize(&text).await
 }
 
 /// Get a quote for processing a request

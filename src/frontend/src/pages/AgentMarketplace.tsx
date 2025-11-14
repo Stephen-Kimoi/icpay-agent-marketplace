@@ -226,7 +226,7 @@ export default function AgentMarketplace() {
                     </p>
                   </div>
                   <div className="mt-auto flex items-center justify-between text-sm text-gray-400">
-                    <span className="font-medium text-purple-300">{agent.price}</span>
+                    {/* <span className="font-medium text-purple-300">{agent.price}</span> */}
                     <span className="rounded-full bg-gray-900/80 px-3 py-1 text-xs text-gray-500">
                       {agent.category}
                     </span>
@@ -266,7 +266,7 @@ export default function AgentMarketplace() {
           className="flex flex-col items-center gap-2 border-t border-gray-800/60 pt-8 text-center text-sm text-gray-500"
         >
           <p>
-            Built with <span className="text-pink-400">❤️</span> by the Autonomous Agents Network
+            Built with <span className="text-pink-400">❤️</span>
           </p>
           <div className="flex items-center gap-4 text-xs uppercase tracking-wide text-gray-600">
             <a

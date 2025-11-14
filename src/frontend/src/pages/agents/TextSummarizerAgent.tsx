@@ -1,15 +1,22 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowLeft,
   BookOpenCheck,
   CheckCircle2,
   Highlighter,
+  Loader2,
   ScrollText,
   Sparkles,
   Wand2,
+  AlertCircle,
+  Copy,
+  CheckCircle,
 } from "lucide-react";
+import { summarizeText, MAX_TEXT_LENGTH } from "@/services/textSummarizerService";
 
 const tonePresets = [
   "Executive Summary",
@@ -23,6 +30,56 @@ type TonePreset = (typeof tonePresets)[number];
 export default function TextSummarizerAgent() {
   const [selectedTone, setSelectedTone] = useState<TonePreset>("Executive Summary");
   const [includeQuotes, setIncludeQuotes] = useState(true);
+  const [text, setText] = useState("");
+  const [summary, setSummary] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleSummarize = async () => {
+    if (!text.trim()) {
+      setError("Please enter some text to summarize.");
+      return;
+    }
+
+    if (text.length > MAX_TEXT_LENGTH) {
+      setError(
+        `Text length (${text.length} characters) exceeds maximum allowed length of ${MAX_TEXT_LENGTH} characters.`
+      );
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSummary(null);
+
+    try {
+      const result = await summarizeText({
+        text: text.trim(),
+        tone: selectedTone,
+        includeQuotes,
+      });
+      setSummary(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to summarize text. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!summary) return;
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  const characterCount = text.length;
+  const characterLimit = MAX_TEXT_LENGTH;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
@@ -54,17 +111,6 @@ export default function TextSummarizerAgent() {
                 briefings, recaps, and knowledge sharing.
               </p>
             </div>
-            <div className="mx-auto flex flex-col gap-4 rounded-2xl border border-purple-500/30 bg-purple-500/10 px-6 py-5 text-sm text-purple-200 shadow-[0_20px_60px_-30px_rgba(168,85,247,0.6)]">
-              <span className="text-xs uppercase tracking-widest text-purple-300/80">
-                Starting at
-              </span>
-              <span className="text-3xl font-semibold text-purple-100">
-                0.03 ICP
-              </span>
-              <span className="text-xs text-purple-200/70">
-                Tiered by word count & narrative depth
-              </span>
-            </div>
           </div>
         </header>
 
@@ -90,12 +136,30 @@ export default function TextSummarizerAgent() {
                   Paste long-form text
                 </span>
                 <textarea
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    setError(null);
+                  }}
                   placeholder="Drop your article, meeting transcript, or blog post here…"
                   className="mt-3 flex-1 resize-none rounded-2xl border border-dashed border-gray-800/60 bg-gray-950/40 p-4 text-sm text-gray-300 placeholder-gray-500 focus:outline-none"
                 />
-                <span className="mt-3 text-xs text-gray-500">
-                  Up to 50,000 characters per request
-                </span>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    Up to {characterLimit.toLocaleString()} characters per request
+                  </span>
+                  <span
+                    className={`text-xs ${
+                      characterCount > characterLimit
+                        ? "text-red-400"
+                        : characterCount > characterLimit * 0.9
+                        ? "text-yellow-400"
+                        : "text-gray-400"
+                    }`}
+                  >
+                    {characterCount.toLocaleString()} / {characterLimit.toLocaleString()}
+                  </span>
+                </div>
               </label>
 
               <div className="grid gap-4 rounded-2xl border border-dashed border-gray-800/70 bg-gray-900/60 p-6 text-sm text-gray-300 transition hover:border-purple-500/50 hover:bg-gray-900/80 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -155,6 +219,13 @@ export default function TextSummarizerAgent() {
               </div>
             </div>
 
+            {error && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+                <AlertCircle className="h-4 w-4 text-red-300" />
+                <span>{error}</span>
+              </div>
+            )}
+
             <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-gray-800/70 bg-gray-900/50 p-6 text-sm text-gray-300 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <Wand2 className="h-5 w-5 text-purple-300" />
@@ -162,10 +233,101 @@ export default function TextSummarizerAgent() {
                   Summaries delivered with bullet highlights & optional tweet threads.
                 </span>
               </div>
-              <Button className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500">
-                Continue to Payment
+              <Button
+                onClick={handleSummarize}
+                disabled={loading || !text.trim() || text.length > MAX_TEXT_LENGTH}
+                className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Summarizing...
+                  </span>
+                ) : (
+                  "Generate Summary"
+                )}
               </Button>
             </div>
+
+            {summary && (
+              <div className="mt-8 rounded-3xl border border-purple-500/30 bg-purple-500/5 p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-white">Summary</h3>
+                  <button
+                    onClick={handleCopy}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-800/70 bg-gray-900/60 px-3 py-2 text-xs text-gray-300 transition hover:border-purple-500/40 hover:text-purple-200"
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle className="h-4 w-4 text-green-400" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="prose prose-invert prose-sm max-w-none rounded-2xl border border-gray-800/70 bg-gray-950/60 p-6 text-gray-300">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({ children }) => (
+                        <h1 className="text-2xl font-bold text-white mb-4 mt-6 first:mt-0">
+                          {children}
+                        </h1>
+                      ),
+                      h2: ({ children }) => (
+                        <h2 className="text-xl font-semibold text-white mb-3 mt-5 first:mt-0">
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="text-lg font-semibold text-white mb-2 mt-4 first:mt-0">
+                          {children}
+                        </h3>
+                      ),
+                      p: ({ children }) => (
+                        <p className="mb-3 leading-relaxed">{children}</p>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="list-disc list-inside mb-3 space-y-1 ml-4">
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="list-decimal list-inside mb-3 space-y-1 ml-4">
+                          {children}
+                        </ol>
+                      ),
+                      li: ({ children }) => (
+                        <li className="mb-1">{children}</li>
+                      ),
+                      strong: ({ children }) => (
+                        <strong className="font-semibold text-white">{children}</strong>
+                      ),
+                      em: ({ children }) => (
+                        <em className="italic text-purple-200">{children}</em>
+                      ),
+                      code: ({ children }) => (
+                        <code className="bg-gray-900/50 text-purple-300 px-1.5 py-0.5 rounded text-xs font-mono">
+                          {children}
+                        </code>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-4 border-purple-500/50 pl-4 my-4 italic text-gray-400">
+                          {children}
+                        </blockquote>
+                      ),
+                    }}
+                  >
+                    {summary}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
           </section>
 
           <aside className="flex flex-col gap-6 rounded-3xl border border-gray-800/70 bg-gray-950/70 p-8 backdrop-blur-xl">
