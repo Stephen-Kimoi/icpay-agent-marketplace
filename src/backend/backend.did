@@ -29,14 +29,17 @@ service : {
   complete_payment : (text, text) -> (Result_1);
   // Compress a PDF with the provided quality (1-100).
   compress_pdf : (blob, nat8) -> (Result_2);
+  compress_uploaded_pdf : (text, nat8) -> (Result_2);
   // Execute the job after payment is confirmed
   execute_job : (text) -> (Result_3);
   // Get job result
   get_job_result : (text) -> (Result_3) query;
   // Get a quote for processing a request
   get_quote : (text) -> (Result_4);
+  init_pdf_upload : (text) -> (Result_1);
   // Initiate payment for a job
   initiate_payment : (text) -> (Result_5);
   // Get all jobs (for debugging/admin)
   list_jobs : () -> (vec record { text; JobRequest }) query;
+  upload_pdf_chunk : (text, blob) -> (Result_1);
 }

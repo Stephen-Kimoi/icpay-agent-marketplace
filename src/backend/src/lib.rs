@@ -55,6 +55,7 @@ thread_local! {
     static PAYMENTS: RefCell<HashMap<String, PaymentInfo>> = RefCell::default();
     static RESULTS: RefCell<HashMap<String, JobResult>> = RefCell::default();
     static JOB_COUNTER: RefCell<u64> = RefCell::new(0);
+    static PDF_UPLOADS: RefCell<HashMap<String, Vec<u8>>> = RefCell::default();
 }
 
 // Calculate the cost based on request complexity using AI
