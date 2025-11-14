@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Quote } from "@/types/quote";
 import type { PaymentResult, PaymentState } from "@/types/payment";
 import { getQuote } from "@/services/quoteService";
@@ -42,6 +42,7 @@ export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [requestDescription, setRequestDescription] = useState("");
+  const [icpayConfig, setIcpayConfig] = useState<ICPayConfig | null>(null);
 
   const executeRef = useRef<ExecuteFn<T> | null>(null);
 
@@ -131,13 +132,28 @@ export function usePaymentFlow<T>(): UsePaymentFlowReturn<T> {
     setResult(null);
     setError(null);
     setRequestDescription("");
+    setIcpayConfig(null);
     executeRef.current = null;
   }, []);
 
-  const icpayConfig = useMemo(
-    () => createICPayConfig(quote, requestDescription),
-    [quote, requestDescription]
-  );
+  // Fetch ICPay config when quote or request description changes
+  useEffect(() => {
+    const fetchConfig = async () => {
+      if (quote && requestDescription) {
+        try {
+          const config = await createICPayConfig(quote, requestDescription);
+          setIcpayConfig(config);
+        } catch (err) {
+          console.error("Failed to create ICPay config:", err);
+          setIcpayConfig(null);
+        }
+      } else {
+        setIcpayConfig(null);
+      }
+    };
+
+    fetchConfig();
+  }, [quote, requestDescription]);
 
   const isProcessing = state === "executing" || loading;
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from "react-markdown";
@@ -17,6 +17,9 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { summarizeText, MAX_TEXT_LENGTH } from "@/services/textSummarizerService";
+import { usePaymentFlow } from "@/hooks/usePaymentFlow";
+// @ts-ignore - ICPay widget types may not be fully resolved
+import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
 
 const tonePresets = [
   "Executive Summary",
@@ -27,16 +30,45 @@ const tonePresets = [
 
 type TonePreset = (typeof tonePresets)[number];
 
+type SummarizationResult = {
+  summary: string;
+};
+
 export default function TextSummarizerAgent() {
   const [selectedTone, setSelectedTone] = useState<TonePreset>("Executive Summary");
   const [includeQuotes, setIncludeQuotes] = useState(true);
   const [text, setText] = useState("");
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const handleSummarize = async () => {
+  const {
+    state,
+    quote,
+    paymentResult,
+    result,
+    error,
+    loading,
+    isProcessing,
+    icpayConfig,
+    requestQuote,
+    handlePaymentSuccess,
+    handlePaymentError,
+    reset,
+    setError,
+  } = usePaymentFlow<SummarizationResult>();
+
+  const summary = result?.summary ?? null;
+  const completed = state === "completed";
+
+  const quoteDescription = useMemo(() => {
+    if (!text.trim()) return "";
+    return [
+      `Summarize text (${text.length} characters)`,
+      `Tone: ${selectedTone}`,
+      `Include quotes: ${includeQuotes ? "Yes" : "No"}`,
+    ].join(" | ");
+  }, [text, selectedTone, includeQuotes]);
+
+  const handleQuoteRequest = async () => {
     if (!text.trim()) {
       setError("Please enter some text to summarize.");
       return;
@@ -49,22 +81,21 @@ export default function TextSummarizerAgent() {
       return;
     }
 
-    setLoading(true);
     setError(null);
-    setSummary(null);
 
-    try {
-      const result = await summarizeText({
-        text: text.trim(),
-        tone: selectedTone,
-        includeQuotes,
-      });
-      setSummary(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to summarize text. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    await requestQuote({
+      request: quoteDescription,
+      execute: async () => {
+        const summaryText = await summarizeText({
+          text: text.trim(),
+          tone: selectedTone,
+          includeQuotes,
+        });
+        return {
+          summary: summaryText,
+        };
+      },
+    });
   };
 
   const handleCopy = async () => {
@@ -140,6 +171,9 @@ export default function TextSummarizerAgent() {
                   onChange={(e) => {
                     setText(e.target.value);
                     setError(null);
+                    if (state !== "idle" && state !== "error") {
+                      reset();
+                    }
                   }}
                   placeholder="Drop your article, meeting transcript, or blog post here…"
                   className="mt-3 flex-1 resize-none rounded-2xl border border-dashed border-gray-800/60 bg-gray-950/40 p-4 text-sm text-gray-300 placeholder-gray-500 focus:outline-none"
@@ -187,7 +221,12 @@ export default function TextSummarizerAgent() {
                   <button
                     key={preset}
                     type="button"
-                    onClick={() => setSelectedTone(preset)}
+                    onClick={() => {
+                      setSelectedTone(preset);
+                      if (state !== "idle" && state !== "error") {
+                        reset();
+                      }
+                    }}
                     className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition ${
                       selectedTone === preset
                         ? "border-purple-500 bg-purple-500/20 text-purple-100 shadow-[0_18px_45px_-25px_rgba(168,85,247,0.8)]"
@@ -204,7 +243,12 @@ export default function TextSummarizerAgent() {
                   <input
                     type="checkbox"
                     checked={includeQuotes}
-                    onChange={() => setIncludeQuotes((value) => !value)}
+                    onChange={() => {
+                      setIncludeQuotes((value) => !value);
+                      if (state !== "idle" && state !== "error") {
+                        reset();
+                      }
+                    }}
                     className="h-4 w-4 rounded border border-gray-700 bg-gray-900 text-purple-500 focus:ring-purple-500"
                   />
                   <span>Highlight standout quotes & statistics</span>
@@ -228,47 +272,119 @@ export default function TextSummarizerAgent() {
 
             <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-gray-800/70 bg-gray-900/50 p-6 text-sm text-gray-300 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <Wand2 className="h-5 w-5 text-purple-300" />
-                <span>
-                  Summaries delivered with bullet highlights & optional tweet threads.
-                </span>
+                <CheckCircle2 className="h-5 w-5 text-green-400" />
+                <span>Secure processing inside ICP canisters</span>
               </div>
-              <Button
-                onClick={handleSummarize}
-                disabled={loading || !text.trim() || text.length > MAX_TEXT_LENGTH}
-                className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? (
+              {state === "idle" || state === "error" || state === "completed" ? (
+                <Button
+                  onClick={handleQuoteRequest}
+                  disabled={!text.trim() || loading || isProcessing || text.length > MAX_TEXT_LENGTH}
+                  className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Getting Quote...
+                    </span>
+                  ) : (
+                    "Get Summary Quote"
+                  )}
+                </Button>
+              ) : state === "quoted" && icpayConfig ? (
+                <div className="flex-1">
+                  <IcpayPayButton
+                    config={icpayConfig}
+                    onSuccess={handlePaymentSuccess}
+                    onError={handlePaymentError}
+                  />
+                </div>
+              ) : state === "waiting_for_payment" || state === "executing" ? (
+                <Button
+                  disabled
+                  className="flex-1 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] disabled:opacity-60"
+                >
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Summarizing...
+                    {state === "waiting_for_payment" ? "Waiting for Payment" : "Summarizing..."}
                   </span>
-                ) : (
-                  "Generate Summary"
-                )}
-              </Button>
+                </Button>
+              ) : null}
             </div>
 
-            {summary && (
+            {quote && state !== "completed" && (
+              <div className="mt-6 rounded-2xl border border-purple-500/40 bg-purple-500/10 p-5 text-sm text-purple-100">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-purple-300/70">
+                      Quoted Price
+                    </p>
+                    <p className="text-2xl font-semibold text-purple-100">
+                      {quote.price} {quote.currency}
+                    </p>
+                  </div>
+                  {paymentResult && (
+                    <div className="text-xs text-purple-200/70">
+                      Last transaction:{" "}
+                      <span className="font-mono">{paymentResult.transactionId}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {state === "waiting_for_payment" && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Awaiting ICPay settlement...</span>
+              </div>
+            )}
+
+            {state === "executing" && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-500/10 p-4 text-sm text-blue-100">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Generating summary in the canister...</span>
+              </div>
+            )}
+
+            {paymentResult && completed && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-green-500/40 bg-green-500/10 p-4 text-sm text-green-100">
+                <CheckCircle2 className="h-4 w-4 text-green-300" />
+                <span>
+                  Payment confirmed. Transaction ID:{" "}
+                  <span className="font-mono">{paymentResult.transactionId}</span>
+                </span>
+              </div>
+            )}
+
+            {summary && completed && (
               <div className="mt-8 rounded-3xl border border-purple-500/30 bg-purple-500/5 p-6">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-white">Summary</h3>
-                  <button
-                    onClick={handleCopy}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-800/70 bg-gray-900/60 px-3 py-2 text-xs text-gray-300 transition hover:border-purple-500/40 hover:text-purple-200"
-                  >
-                    {copied ? (
-                      <>
-                        <CheckCircle className="h-4 w-4 text-green-400" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        Copy
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleCopy}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-800/70 bg-gray-900/60 px-3 py-2 text-xs text-gray-300 transition hover:border-purple-500/40 hover:text-purple-200"
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-400" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={reset}
+                      className="text-xs text-purple-200/70 underline underline-offset-4 hover:text-purple-100"
+                    >
+                      Start new summary
+                    </button>
+                  </div>
                 </div>
                 <div className="prose prose-invert prose-sm max-w-none rounded-2xl border border-gray-800/70 bg-gray-950/60 p-6 text-gray-300">
                   <ReactMarkdown

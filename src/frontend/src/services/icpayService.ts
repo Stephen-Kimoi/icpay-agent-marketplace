@@ -40,26 +40,100 @@ export const getPublishableKey = (): string | null => {
   return publishableKey;
 };
 
+// Cache for ICP price to avoid excessive API calls
+let icpPriceCache: { price: number; timestamp: number } | null = null;
+const CACHE_DURATION = 60 * 1000; // 1 minute cache
+
+/**
+ * Fetches the current ICP/USD exchange rate from CoinGecko API
+ * @returns The current ICP price in USD
+ * @throws Error if the API call fails
+ */
+const fetchICPPrice = async (): Promise<number> => {
+  // Check cache first
+  if (icpPriceCache && Date.now() - icpPriceCache.timestamp < CACHE_DURATION) {
+    console.log(`Using cached ICP price: $${icpPriceCache.price}`);
+    return icpPriceCache.price;
+  }
+
+  try {
+    const response = await fetch(
+      'https://api.coingecko.com/api/v3/simple/price?ids=internet-computer&vs_currencies=usd'
+    );
+
+    if (!response.ok) {
+      throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const price = data['internet-computer']?.usd;
+
+    if (!price || typeof price !== 'number') {
+      throw new Error('Invalid price data from CoinGecko API');
+    }
+
+    // Update cache
+    icpPriceCache = {
+      price,
+      timestamp: Date.now(),
+    };
+
+    console.log(`Fetched ICP price from CoinGecko: $${price}`);
+    return price;
+  } catch (error) {
+    console.error('Failed to fetch ICP price from CoinGecko:', error);
+    
+    // Fallback to cached price if available, even if expired
+    if (icpPriceCache) {
+      console.warn(`Using expired cached ICP price: $${icpPriceCache.price}`);
+      return icpPriceCache.price;
+    }
+
+    // Final fallback to environment variable or default
+    const fallbackRate = parseFloat(import.meta.env.VITE_ICP_USD_RATE || '6.5');
+    console.warn(`Using fallback ICP price: $${fallbackRate}`);
+    return fallbackRate;
+  }
+};
+
+/**
+ * Converts ICP amount to USD using live exchange rate
+ * @param icpAmount - Amount in ICP
+ * @returns Amount in USD
+ */
+const convertICPtoUSD = async (icpAmount: number): Promise<number> => {
+  const icpToUsdRate = await fetchICPPrice();
+  return icpAmount * icpToUsdRate;
+};
+
 /**
  * Creates ICPay configuration from a quote
  * @param quote - The quote object containing price and job information
  * @param userRequest - The user's original request (for metadata)
  * @returns ICPay configuration object or null if publishable key is invalid
  */
-export const createICPayConfig = (
+export const createICPayConfig = async (
   quote: Quote | null,
   userRequest: string
-): ICPayConfig | null => {
+): Promise<ICPayConfig | null> => {
   console.log("Creating ICPay config...");
   if (!quote) return null;
   
   const publishableKey = getPublishableKey();
   if (!publishableKey) return null;
 
+  // Convert quote price to USD if it's in ICP
+  // ICPay's amountUsd field expects USD, and it will convert back to the selected currency
+  const amountUsd = quote.currency === "ICP" 
+    ? await convertICPtoUSD(quote.price)
+    : quote.price; // If already in USD or other currency, use as-is
+
+  console.log(`Quote: ${quote.price} ${quote.currency} -> ${amountUsd} USD`);
   console.log("Creating ICPay config... done");
+  
   return {
     publishableKey,
-    amountUsd: quote.price,
+    amountUsd,
     defaultSymbol: quote.currency === "ICP" ? "ICP" : "ICP",
     showLedgerDropdown: 'dropdown',
     progressBar: { enabled: true, mode: 'modal' },
