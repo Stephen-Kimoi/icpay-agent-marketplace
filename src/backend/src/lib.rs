@@ -9,6 +9,9 @@ use pdf::PdfCompressor;
 mod text_summarizer;
 use text_summarizer::{TextSummarizer, SummarizationOptions};
 
+mod csv_analyzer;
+use csv_analyzer::{CsvAnalyzer, AnalysisOptions};
+
 // Types for the API
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct Quote {
@@ -63,11 +66,16 @@ thread_local! {
 
 // Calculate the cost based on request complexity using AI
 async fn calculate_cost(request: &str) -> f64 {
-    // Detect if this is a text summarization request
-    let is_summarization = request.to_lowercase().contains("summarize");
+    let request_lower = request.to_lowercase();
+    
+    // Detect request type
+    let is_summarization = request_lower.contains("summarize");
+    let is_csv_analysis = request_lower.contains("csv") || request_lower.contains("analyze") && (request_lower.contains("dataset") || request_lower.contains("spreadsheet"));
     
     let (min_price, max_price, default_price) = if is_summarization {
         (0.1, 0.5, 0.3) // Text summarization: 0.1 - 0.5 ICP
+    } else if is_csv_analysis {
+        (0.2, 1.0, 0.5) // CSV analysis: 0.2 - 1.0 ICP
     } else {
         (0.1, 2.0, 0.5) // Other requests: 0.1 - 2.0 ICP
     };
@@ -135,6 +143,25 @@ async fn summarize_text(
     let options = SummarizationOptions::new(tone, include_quotes);
     let summarizer = TextSummarizer::new(options);
     summarizer.summarize(&text).await
+}
+
+/// Analyze CSV data with the provided options.
+#[ic_cdk::update]
+async fn analyze_csv(
+    csv_bytes: Vec<u8>,
+    preset: String,
+    primary_metric: Option<String>,
+    segment_column: Option<String>,
+    include_visuals: bool,
+) -> Result<String, String> {
+    let options = AnalysisOptions::new(
+        preset,
+        primary_metric,
+        segment_column,
+        include_visuals,
+    );
+    let analyzer = CsvAnalyzer::new(options);
+    analyzer.analyze(&csv_bytes).await
 }
 
 /// Get a quote for processing a request

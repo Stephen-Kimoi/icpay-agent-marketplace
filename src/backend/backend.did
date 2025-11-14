@@ -16,30 +16,32 @@ type PaymentRequest = record {
 };
 type PaymentStatus = variant { Failed; Completed; Pending };
 type Quote = record { job_id : text; currency : text; price : float64 };
-type Result = variant { Ok : PaymentInfo; Err : text };
-type Result_1 = variant { Ok; Err : text };
-type Result_2 = variant { Ok : blob; Err : text };
-type Result_3 = variant { Ok : JobResult; Err : text };
-type Result_4 = variant { Ok : Quote; Err : text };
-type Result_5 = variant { Ok : PaymentRequest; Err : text };
-type Result_6 = variant { Ok : text; Err : text };
+type Result = variant { Ok : text; Err : text };
+type Result_1 = variant { Ok : PaymentInfo; Err : text };
+type Result_2 = variant { Ok; Err : text };
+type Result_3 = variant { Ok : blob; Err : text };
+type Result_4 = variant { Ok : JobResult; Err : text };
+type Result_5 = variant { Ok : Quote; Err : text };
+type Result_6 = variant { Ok : PaymentRequest; Err : text };
 service : {
+  // Analyze CSV data with the provided options.
+  analyze_csv : (blob, text, opt text, opt text, bool) -> (Result);
   // Check payment status for a job
-  check_payment_status : (text) -> (Result) query;
+  check_payment_status : (text) -> (Result_1) query;
   // Complete payment (mock function - in production this would be called by ICPAY SDK callback)
-  complete_payment : (text, text) -> (Result_1);
+  complete_payment : (text, text) -> (Result_2);
   // Compress a PDF with the provided quality (1-100).
-  compress_pdf : (blob, nat8) -> (Result_2);
+  compress_pdf : (blob, nat8) -> (Result_3);
   // Execute the job after payment is confirmed
-  execute_job : (text) -> (Result_3);
+  execute_job : (text) -> (Result_4);
   // Get job result
-  get_job_result : (text) -> (Result_3) query;
+  get_job_result : (text) -> (Result_4) query;
   // Get a quote for processing a request
-  get_quote : (text) -> (Result_4);
+  get_quote : (text) -> (Result_5);
   // Initiate payment for a job
-  initiate_payment : (text) -> (Result_5);
+  initiate_payment : (text) -> (Result_6);
   // Get all jobs (for debugging/admin)
   list_jobs : () -> (vec record { text; JobRequest }) query;
   // Summarize text with the provided tone and options.
-  summarize_text : (text, text, bool) -> (Result_6);
+  summarize_text : (text, text, bool) -> (Result);
 }
