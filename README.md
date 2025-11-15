@@ -28,35 +28,6 @@ Summarize long articles and documents instantly. Features:
 - Support for up to 50,000 characters
 - Custom tone instructions
 
-### 📊 CSV Analyzer
-**Category**: Data Tools  
-
-Analyze and visualize CSV data efficiently. Features:
-- Multiple analysis presets (Trends, Anomalies, Forecast, Summary)
-- Primary metric selection
-- Segment-based analysis
-- Optional visualizations
-
-## Technology Stack
-
-### Backend
-- **Language**: Rust
-- **Framework**: IC CDK (Internet Computer Canister Development Kit)
-- **LLM**: Qwen3 32B model via `ic-llm`
-- **PDF Processing**: `lopdf` for PDF manipulation and text extraction
-- **Image Processing**: `image` and `jpeg-encoder` for image optimization
-
-### Frontend
-- **Framework**: React with TypeScript
-- **Styling**: Tailwind CSS
-- **Routing**: React Router
-- **UI Components**: Custom components with Lucide icons
-- **Animations**: Framer Motion
-- **Build Tool**: Vite
-
-### Payment Integration
-- **Payment System**: ICPay SDK
-
 ---
 
 Built with ❤️ on the Internet Computer
