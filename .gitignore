@@ -33,3 +33,7 @@ figma-ui/
 .cursorindexingignore
 
 csv-examples/
+
+# Identity
+cicd-identity.pem
+cicd-identity.pem.base64
