@@ -7,10 +7,11 @@ import PdfCompressorAgent from "./pages/agents/PdfCompressorAgent";
 import TextSummarizerAgent from "./pages/agents/TextSummarizerAgent";
 import GitHubScorerAgent from "./pages/agents/GitHubScorerAgent";
 import PaymentAgent from "./pages/PaymentAgent";
+import GitHubOAuthCallback from "./pages/GitHubOAuthCallback";
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <BrowserRouter> 
       <div className="relative min-h-screen bg-black">
         <Routes>
           <Route path="/" element={<AgentMarketplace />} />
@@ -18,6 +19,7 @@ const App: React.FC = () => {
           <Route path="/agent/text-summarizer" element={<TextSummarizerAgent />} />
           <Route path="/agent/csv-analyzer" element={<CsvAnalyzerAgent />} />
           <Route path="/agent/github-scorer" element={<GitHubScorerAgent />} />
+          <Route path="/oauth/github/callback" element={<GitHubOAuthCallback />} />
           <Route path="/agent/:agentId" element={<PaymentAgent />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

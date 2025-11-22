@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from "react-markdown";
@@ -17,8 +17,10 @@ import {
   Code2,
   Activity,
   GitBranch,
+  Link2,
 } from "lucide-react";
 import { scoreGitHub, type GitHubScoreResult } from "@/services/githubScorerService";
+import { githubOAuthAuthorize, githubHasToken } from "@/services/githubOAuthService";
 import { usePaymentFlow } from "@/hooks/usePaymentFlow";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
@@ -30,6 +32,9 @@ type ScoringResult = {
 export default function GitHubScorerAgent() {
   const [githubHandle, setGithubHandle] = useState("");
   const [copied, setCopied] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(true);
+  const [connecting, setConnecting] = useState(false);
 
   const {
     state,
@@ -49,6 +54,35 @@ export default function GitHubScorerAgent() {
 
   const scoreResult = result?.scoreResult ?? null;
   const completed = state === "completed";
+
+  // Check GitHub connection status on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const connected = await githubHasToken();
+        setIsConnected(connected);
+      } catch (err) {
+        console.error("Error checking GitHub connection:", err);
+        setIsConnected(false);
+      } finally {
+        setCheckingConnection(false);
+      }
+    };
+    checkConnection();
+  }, []);
+
+  const handleConnectGitHub = async () => {
+    setConnecting(true);
+    try {
+      const authUrl = await githubOAuthAuthorize();
+      // Redirect to GitHub OAuth
+      window.location.href = authUrl.url;
+    } catch (err) {
+      console.error("Error initiating GitHub OAuth:", err);
+      setError(err instanceof Error ? err.message : "Failed to connect to GitHub");
+      setConnecting(false);
+    }
+  };
 
   const quoteDescription = useMemo(() => {
     if (!githubHandle.trim()) return "";
@@ -169,6 +203,62 @@ export default function GitHubScorerAgent() {
                 <Github className="h-6 w-6 text-purple-300" />
               </div>
             </div>
+
+            {/* GitHub Connection Status */}
+            {!checkingConnection && (
+              <div className="mt-6 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6">
+                {isConnected ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-green-500/20 p-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          GitHub Connected
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          You can now score GitHub profiles
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-yellow-500/20 p-2">
+                        <AlertCircle className="h-5 w-5 text-yellow-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          GitHub Not Connected
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Connect your GitHub account to enable scoring
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={handleConnectGitHub}
+                      disabled={connecting}
+                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:opacity-60"
+                    >
+                      {connecting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <Link2 className="h-4 w-4" />
+                          Connect GitHub
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-6">
               <label className="group relative flex flex-col rounded-2xl border border-gray-800/80 bg-gray-900/60 p-5 transition focus-within:border-purple-500/60 focus-within:ring-2 focus-within:ring-purple-500/40">
