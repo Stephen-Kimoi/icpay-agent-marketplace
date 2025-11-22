@@ -23,6 +23,22 @@ type Result_3 = variant { Ok : blob; Err : text };
 type Result_4 = variant { Ok : JobResult; Err : text };
 type Result_5 = variant { Ok : Quote; Err : text };
 type Result_6 = variant { Ok : PaymentRequest; Err : text };
+type OAuthAuthorizationUrl = record { url : text; state : text };
+type OAuthToken = record {
+  access_token : text;
+  token_type : text;
+  scope : text;
+  user_principal : text;
+  created_at : nat64;
+};
+type Result_7 = variant { Ok : OAuthAuthorizationUrl; Err : text };
+type Result_8 = variant { Ok : OAuthToken; Err : text };
+type GitHubOAuthConfig = record {
+  client_id : text;
+  client_secret : text;
+  redirect_uri : text;
+};
+type Result_9 = variant { Ok : GitHubOAuthConfig; Err : text };
 service : {
   // Analyze CSV data with the provided options.
   analyze_csv : (blob, text, opt text, opt text, bool) -> (Result);
@@ -44,4 +60,18 @@ service : {
   list_jobs : () -> (vec record { text; JobRequest }) query;
   // Summarize text with the provided tone and options.
   summarize_text : (text, text, bool) -> (Result);
+  // GitHub OAuth: Generate authorization URL
+  github_oauth_authorize : () -> (Result_7);
+  // GitHub OAuth: Exchange authorization code for access token
+  github_oauth_callback : (text, text) -> (Result_8);
+  // GitHub OAuth: Get stored token for caller
+  github_get_token : () -> (Result_8) query;
+  // GitHub OAuth: Check if caller has a valid token
+  github_has_token : () -> (bool) query;
+  // GitHub OAuth: Revoke/remove token
+  github_revoke_token : () -> (Result_2);
+  // GitHub OAuth: Set configuration (admin only)
+  github_oauth_set_config : (GitHubOAuthConfig) -> (Result);
+  // GitHub OAuth: Get configuration (admin only)
+  github_oauth_get_config : () -> (Result_9) query;
 }

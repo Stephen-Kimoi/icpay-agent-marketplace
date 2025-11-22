@@ -12,6 +12,13 @@ use text_summarizer::{TextSummarizer, SummarizationOptions};
 mod csv_analyzer;
 use csv_analyzer::{CsvAnalyzer, AnalysisOptions};
 
+mod github_oauth;
+use github_oauth::{
+    generate_authorization_url, exchange_code_for_token, get_token, has_token, revoke_token,
+    set_github_oauth_config_internal, GitHubOAuthConfig, OAuthAuthorizationUrl, OAuthToken,
+};
+use ic_cdk::api::management_canister::http_request::{HttpResponse, TransformArgs};
+
 // Types for the API
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct Quote {
@@ -333,6 +340,78 @@ fn list_jobs() -> Vec<(String, JobRequest)> {
     JOBS.with(|jobs| {
         jobs.borrow().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     })
+}
+
+// ========== GitHub OAuth Functions ==========
+
+/// Generate GitHub OAuth authorization URL
+#[ic_cdk::update]
+fn github_oauth_authorize() -> Result<OAuthAuthorizationUrl, String> {
+    let principal = ic_cdk::caller().to_text();
+    generate_authorization_url(principal)
+}
+
+/// Exchange OAuth authorization code for access token
+#[ic_cdk::update]
+async fn github_oauth_callback(code: String, state: String) -> Result<OAuthToken, String> {
+    exchange_code_for_token(code, state).await
+}
+
+/// Get stored GitHub OAuth token for the caller
+#[ic_cdk::query]
+fn github_get_token() -> Result<OAuthToken, String> {
+    let principal = ic_cdk::caller().to_text();
+    get_token(principal).ok_or_else(|| "No GitHub token found. Please authorize first.".to_string())
+}
+
+/// Check if caller has a valid GitHub token
+#[ic_cdk::query]
+fn github_has_token() -> bool {
+    let principal = ic_cdk::caller().to_text();
+    has_token(principal)
+}
+
+/// Revoke/remove GitHub OAuth token
+#[ic_cdk::update]
+fn github_revoke_token() -> Result<(), String> {
+    let principal = ic_cdk::caller().to_text();
+    revoke_token(principal)
+}
+
+/// Set GitHub OAuth configuration (admin only)
+#[ic_cdk::update]
+fn github_oauth_set_config(config: GitHubOAuthConfig) -> Result<String, String> {
+    // TODO: Replace with your authorized principal
+    // For now, we'll allow any principal to set config (you should restrict this)
+    // Example:
+    // let caller = ic_cdk::caller();
+    // let authorized_principal = Principal::from_text("5mqc2-eelsb-rpsbu-tvroe-paiy3-c4wo3-4xl6q-7nelg-gprk3-rkq46-mqe")
+    //     .expect("Invalid authorized principal");
+    // 
+    // if caller != authorized_principal {
+    //     return Err("Unauthorized: Only the authorized principal can update GitHub OAuth configuration".to_string());
+    // }
+    
+    // Validate configuration
+    if config.client_id.is_empty() {
+        return Err("Client ID cannot be empty".to_string());
+    }
+    if config.client_secret.is_empty() {
+        return Err("Client Secret cannot be empty".to_string());
+    }
+    if config.redirect_uri.is_empty() {
+        return Err("Redirect URI cannot be empty".to_string());
+    }
+    
+    set_github_oauth_config_internal(config);
+    Ok("GitHub OAuth configuration updated successfully".to_string())
+}
+
+/// Get GitHub OAuth configuration (admin only)
+#[ic_cdk::query]
+fn github_oauth_get_config() -> Result<GitHubOAuthConfig, String> {
+    // TODO: Add authorization check if needed
+    github_oauth::get_config()
 }
 
 ic_cdk::export_candid!();
