@@ -39,6 +39,21 @@ type GitHubOAuthConfig = record {
   redirect_uri : text;
 };
 type Result_9 = variant { Ok : GitHubOAuthConfig; Err : text };
+type ScoreBreakdown = record {
+  commits : float64;
+  activity : float64;
+  languages : float64;
+  repositories : float64;
+  contributions : float64;
+};
+type GitHubScoreResult = record {
+  score : float64;
+  rank : nat64;
+  total_users : nat64;
+  breakdown : ScoreBreakdown;
+  details : text;
+};
+type Result_10 = variant { Ok : GitHubScoreResult; Err : text };
 service : {
   // Analyze CSV data with the provided options.
   analyze_csv : (blob, text, opt text, opt text, bool) -> (Result);
@@ -74,4 +89,6 @@ service : {
   github_oauth_set_config : (GitHubOAuthConfig) -> (Result);
   // GitHub OAuth: Get configuration (admin only)
   github_oauth_get_config : () -> (Result_9) query;
+  // GitHub Scoring: Score a GitHub profile
+  score_github : (text) -> (Result_10);
 }

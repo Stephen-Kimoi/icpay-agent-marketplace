@@ -19,6 +19,12 @@ use github_oauth::{
 };
 use ic_cdk::api::management_canister::http_request::{HttpResponse, TransformArgs};
 
+mod github_api;
+use github_api::fetch_github_metrics;
+
+mod github_scorer;
+use github_scorer::{GitHubScorer, GitHubScoreResult};
+
 // Types for the API
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct Quote {
@@ -412,6 +418,38 @@ fn github_oauth_set_config(config: GitHubOAuthConfig) -> Result<String, String> 
 fn github_oauth_get_config() -> Result<GitHubOAuthConfig, String> {
     // TODO: Add authorization check if needed
     github_oauth::get_config()
+}
+
+// ========== GitHub Scoring Functions ==========
+
+/// Score a GitHub profile
+#[ic_cdk::update]
+async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
+    let caller = ic_cdk::caller();
+    let principal = caller.to_text();
+    
+    // Get user's GitHub token
+    let token = get_token(principal)
+        .ok_or_else(|| "GitHub not connected. Please authorize GitHub first.".to_string())?;
+    
+    ic_cdk::println!("Scoring GitHub profile for handle: {}", handle);
+    
+    // Fetch GitHub metrics
+    let metrics = fetch_github_metrics(&handle, &token.access_token).await?;
+    
+    ic_cdk::println!("Fetched GitHub metrics: {} repos, {} commits", 
+        metrics.repositories, metrics.total_commits);
+    
+    // Get total users count (simplified - in production, query from storage)
+    let total_users = 1000u64; // TODO: Get from actual storage
+    
+    // Calculate score using LLM
+    let score_result = GitHubScorer::calculate_score(&metrics, total_users).await?;
+    
+    ic_cdk::println!("Score calculated: {:.1}/100, rank: #{}", 
+        score_result.score, score_result.rank);
+    
+    Ok(score_result)
 }
 
 ic_cdk::export_candid!();

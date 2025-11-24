@@ -247,7 +247,7 @@ async fn request_access_token(code: &str) -> Result<Value, String> {
         method: HttpMethod::POST,
         headers,
         body: Some(body.as_bytes().to_vec()),
-        max_response_bytes: Some(2048), // Limit response size
+        max_response_bytes: Some(16384),
         transform: Some(TransformContext::from_name(
             "transform".to_string(),
             vec![],
