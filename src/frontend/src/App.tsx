@@ -1,5 +1,5 @@
 import React from "react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import "react-toastify/dist/ReactToastify.css";
 import AgentMarketplace from "./pages/AgentMarketplace";
 import CsvAnalyzerAgent from "./pages/agents/CsvAnalyzerAgent";
@@ -11,7 +11,7 @@ import GitHubOAuthCallback from "./pages/GitHubOAuthCallback";
 
 const App: React.FC = () => {
   return (
-    <HashRouter>
+    <BrowserRouter> 
       <div className="relative min-h-screen bg-black">
         <Routes>
           <Route path="/" element={<AgentMarketplace />} />
@@ -24,7 +24,7 @@ const App: React.FC = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
-    </HashRouter>
+    </BrowserRouter>
   );
 };
 

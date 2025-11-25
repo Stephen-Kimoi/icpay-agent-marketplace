@@ -37,6 +37,7 @@ export default function GitHubScorerAgent() {
   const [connecting, setConnecting] = useState(false);
   const [fetchingUsername, setFetchingUsername] = useState(false);
   const [scoringMode, setScoringMode] = useState<"connected" | "manual">("manual");
+  const [mockPaymentEnabled, setMockPaymentEnabled] = useState(false);
 
   const {
     state,
@@ -52,7 +53,12 @@ export default function GitHubScorerAgent() {
     handlePaymentError,
     reset,
     setError,
-  } = usePaymentFlow<ScoringResult>();
+    simulatePayment,
+  } = usePaymentFlow<ScoringResult>({
+    mockPayment: mockPaymentEnabled,
+    mockPrice: 0.05,
+    mockCurrency: "ICP",
+  });
 
   const scoreResult = result?.scoreResult ?? null;
   const completed = state === "completed";
@@ -223,10 +229,10 @@ export default function GitHubScorerAgent() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-white">
-                  Connect your GitHub account
+                  Input your GitHub handle
                 </h2>
                 <p className="mt-2 text-sm text-gray-400">
-                  Connect your GitHub account to enable scoring
+                  Enter your GitHub handle to enable scoring
                 </p>
               </div>
               <div className="hidden sm:block rounded-full bg-purple-500/10 p-3">
@@ -235,7 +241,7 @@ export default function GitHubScorerAgent() {
             </div>
 
             {/* GitHub Connection Status */}
-            {!checkingConnection && (
+            {/* {!checkingConnection && (
               <div className="mt-6 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6">
                 {isConnected ? (
                   <div className="flex items-center justify-between">
@@ -298,7 +304,7 @@ export default function GitHubScorerAgent() {
                   </div>
                 )}
               </div>
-            )}
+            )} */}
 
             {/* Mode selection */}
             {isConnected && (
@@ -370,6 +376,24 @@ export default function GitHubScorerAgent() {
               </div>
             )}
 
+            <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-5">
+              <label className="flex items-center gap-3 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-700 bg-gray-900 text-purple-500 focus:ring-purple-400"
+                  checked={mockPaymentEnabled}
+                  onChange={(e) => {
+                    setMockPaymentEnabled(e.target.checked);
+                    setError(null);
+                  }}
+                />
+                <span className="font-medium text-white">Enable mock payment (no real ICP)</span>
+              </label>
+              <p className="text-xs text-gray-500">
+                When enabled, payments are simulated so you can test scoring without sending real ICP.
+              </p>
+            </div>
+
             {error && (
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
                 <AlertCircle className="h-4 w-4 text-red-300" />
@@ -402,14 +426,31 @@ export default function GitHubScorerAgent() {
                     "Get Score Quote"
                   )}
                 </Button>
-              ) : state === "quoted" && icpayConfig ? (
-                <div className="flex-1">
-                  <IcpayPayButton
-                    config={icpayConfig}
-                    onSuccess={handlePaymentSuccess}
-                    onError={handlePaymentError}
-                  />
-                </div>
+              ) : state === "quoted" ? (
+                mockPaymentEnabled ? (
+                  <Button
+                    onClick={async () => {
+                      if (simulatePayment) {
+                        await simulatePayment();
+                      }
+                    }}
+                    className="flex-1 bg-gradient-to-r from-green-500 via-lime-500 to-emerald-500 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(34,197,94,0.6)] transition hover:from-green-400 hover:via-lime-400 hover:to-emerald-400"
+                  >
+                    Simulate Payment
+                  </Button>
+                ) : icpayConfig ? (
+                  <div className="flex-1">
+                    <IcpayPayButton
+                      config={icpayConfig}
+                      onSuccess={handlePaymentSuccess}
+                      onError={handlePaymentError}
+                    />
+                  </div>
+                ) : (
+                  <Button disabled className="flex-1 opacity-60">
+                    Preparing payment...
+                  </Button>
+                )
               ) : state === "waiting_for_payment" || state === "executing" ? (
                 <Button
                   disabled
@@ -664,7 +705,7 @@ export default function GitHubScorerAgent() {
                 </li>
               </ul>
             </div>
-            <div className="rounded-2xl border border-purple-500/40 bg-purple-500/5 p-6 text-sm text-purple-100">
+            {/* <div className="rounded-2xl border border-purple-500/40 bg-purple-500/5 p-6 text-sm text-purple-100">
               <h4 className="text-xs uppercase tracking-widest text-purple-300/80">
                 Pro Tip
               </h4>
@@ -672,7 +713,7 @@ export default function GitHubScorerAgent() {
                 Your score updates in real-time as your GitHub activity grows. Use the PaymentAgent
                 workflow to schedule regular score checks and track your developer growth over time.
               </p>
-            </div>
+            </div> */}
             <div className="rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6 text-sm text-gray-300">
               <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
                 <Trophy className="h-4 w-4 text-purple-300" />
@@ -681,10 +722,9 @@ export default function GitHubScorerAgent() {
               <ul className="mt-3 space-y-2 text-xs text-gray-400">
                 <li>• Compare your score against all users in the network</li>
                 <li>• Real-time ranking updates as new profiles are scored</li>
-                <li>• Historical tracking available via ICPay receipts</li>
               </ul>
             </div>
-            <div className="rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6 text-sm text-gray-300">
+            {/* <div className="rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6 text-sm text-gray-300">
               <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
                 <Github className="h-4 w-4 text-purple-300" />
                 Privacy & Security
@@ -693,7 +733,7 @@ export default function GitHubScorerAgent() {
                 All GitHub data is processed securely inside ICP canisters. Your profile information
                 is only used for scoring and ranking purposes.
               </p>
-            </div>
+            </div> */}
           </aside>
         </main>
       </div>
