@@ -99,6 +99,8 @@ service : {
   // Score a GitHub profile
   // If handle is empty, uses the authenticated user's GitHub username
   score_github : (text) -> (Result_10);
+  // Score a public GitHub profile without requiring OAuth
+  score_github_public : (text) -> (Result_10);
   // Summarize text with the provided tone and options.
   summarize_text : (text, text, bool) -> (Result);
   transform_github_api : (TransformArgs) -> (HttpResponse) query;

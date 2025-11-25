@@ -19,7 +19,7 @@ import {
   GitBranch,
   Link2,
 } from "lucide-react";
-import { scoreGitHub, type GitHubScoreResult } from "@/services/githubScorerService";
+import { scoreGitHub, scoreGitHubPublic, type GitHubScoreResult } from "@/services/githubScorerService";
 import { githubOAuthAuthorize, githubHasToken, githubGetUsername } from "@/services/githubOAuthService";
 import { usePaymentFlow } from "@/hooks/usePaymentFlow";
 // @ts-ignore - ICPay widget types may not be fully resolved
@@ -36,6 +36,7 @@ export default function GitHubScorerAgent() {
   const [checkingConnection, setCheckingConnection] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [fetchingUsername, setFetchingUsername] = useState(false);
+  const [scoringMode, setScoringMode] = useState<"connected" | "manual">("manual");
 
   const {
     state,
@@ -62,6 +63,9 @@ export default function GitHubScorerAgent() {
       try {
         const connected = await githubHasToken();
         setIsConnected(connected);
+        if (!connected) {
+          setScoringMode("manual");
+        }
         
         // If connected, auto-fetch the GitHub username
         if (connected) {
@@ -69,6 +73,7 @@ export default function GitHubScorerAgent() {
           try {
             const username = await githubGetUsername();
             setGithubHandle(username);
+            setScoringMode((prev) => (prev === "manual" ? "connected" : prev));
           } catch (err) {
             console.error("Error fetching GitHub username:", err);
             // Don't set error state, just leave handle empty
@@ -79,12 +84,15 @@ export default function GitHubScorerAgent() {
       } catch (err) {
         console.error("Error checking GitHub connection:", err);
         setIsConnected(false);
+        setScoringMode("manual");
       } finally {
         setCheckingConnection(false);
       }
     };
     checkConnection();
   }, []);
+  
+  const usingConnectedAccount = isConnected && scoringMode === "connected";
 
   const handleConnectGitHub = async () => {
     setConnecting(true);
@@ -100,21 +108,23 @@ export default function GitHubScorerAgent() {
   };
 
   const quoteDescription = useMemo(() => {
+    if (usingConnectedAccount) {
+      return "Score your connected GitHub profile";
+    }
     if (!githubHandle.trim()) {
-      return isConnected ? "Score your GitHub profile" : "";
+      return "";
     }
     const handle = githubHandle.trim().replace(/^@/, "");
     return `Score GitHub profile "@${handle}"`;
-  }, [githubHandle, isConnected]);
+  }, [githubHandle, usingConnectedAccount]);
 
   const handleQuoteRequest = async () => {
-    // If connected, we can score without handle (auto-detected)
-    // If not connected, handle is required
-    if (!isConnected) {
+    // Determine mode
+    if (!usingConnectedAccount) {
       const handle = githubHandle.trim().replace(/^@/, "");
       
       if (!handle) {
-        setError("Please connect GitHub or enter a GitHub handle.");
+        setError("Please enter a GitHub handle to score.");
         return;
       }
 
@@ -132,10 +142,14 @@ export default function GitHubScorerAgent() {
         console.log("Executing GitHub scoring for job:", jobId);
 
         try {
-          // If handle is provided, use it; otherwise backend will auto-detect from OAuth
-          const scoreResult = await scoreGitHub({
-            githubHandle: githubHandle.trim() || undefined,
-          });
+          let scoreResult: GitHubScoreResult;
+          if (usingConnectedAccount) {
+            scoreResult = await scoreGitHub({
+              githubHandle: "", // auto-detect on backend
+            });
+          } else {
+            scoreResult = await scoreGitHubPublic(githubHandle.trim());
+          }
 
           console.log("GitHub scoring completed successfully");
           return {
@@ -286,9 +300,48 @@ export default function GitHubScorerAgent() {
               </div>
             )}
 
-            {/* Only show username input if not connected via OAuth */}
-            {/* {!isConnected && ( */}
-              {/* <div className="mt-6">
+            {/* Mode selection */}
+            {isConnected && (
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScoringMode("connected");
+                    setError(null);
+                  }}
+                  className={`rounded-2xl border px-4 py-4 text-left text-sm transition ${
+                    scoringMode === "connected"
+                      ? "border-purple-500/60 bg-purple-500/10 text-purple-100"
+                      : "border-gray-800/80 bg-gray-900/50 text-gray-400 hover:border-purple-500/40 hover:text-purple-100"
+                  }`}
+                >
+                  <p className="font-semibold">Use connected account</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Score the GitHub account you authorized via OAuth
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScoringMode("manual");
+                    setError(null);
+                  }}
+                  className={`rounded-2xl border px-4 py-4 text-left text-sm transition ${
+                    scoringMode === "manual"
+                      ? "border-purple-500/60 bg-purple-500/10 text-purple-100"
+                      : "border-gray-800/80 bg-gray-900/50 text-gray-400 hover:border-purple-500/40 hover:text-purple-100"
+                  }`}
+                >
+                  <p className="font-semibold">Score another username</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Enter any public GitHub handle without connecting
+                  </p>
+                </button>
+              </div>
+            )}
+
+            {(scoringMode === "manual" || !isConnected) && (
+              <div className="mt-6">
                 <label className="group relative flex flex-col rounded-2xl border border-gray-800/80 bg-gray-900/60 p-5 transition focus-within:border-purple-500/60 focus-within:ring-2 focus-within:ring-purple-500/40">
                   <span className="text-sm font-semibold text-gray-200">
                     GitHub Username
@@ -311,11 +364,11 @@ export default function GitHubScorerAgent() {
                     />
                   </div>
                   <p className="mt-2 text-xs text-gray-500">
-                    Enter your GitHub username (without @ symbol) or connect via OAuth above
+                    Enter any GitHub username (without @ symbol)
                   </p>
                 </label>
-              </div> */}
-            {/* )} */}
+              </div>
+            )}
 
             {error && (
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
@@ -332,7 +385,12 @@ export default function GitHubScorerAgent() {
               {state === "idle" || state === "error" || state === "completed" ? (
                 <Button
                   onClick={handleQuoteRequest}
-                  disabled={(!isConnected && !githubHandle.trim()) || loading || isProcessing || fetchingUsername}
+                  disabled={
+                    (!usingConnectedAccount && !githubHandle.trim()) ||
+                    loading ||
+                    isProcessing ||
+                    (usingConnectedAccount && fetchingUsername)
+                  }
                   className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? (

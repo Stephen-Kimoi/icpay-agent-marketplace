@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
@@ -15,16 +15,20 @@ export default function GitHubOAuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [hasProcessed, setHasProcessed] = useState(false);
+  const hasProcessedRef = useRef(false); // Use ref to prevent race conditions
 
   useEffect(() => {
     // Prevent duplicate processing (React StrictMode runs effects twice)
-    if (hasProcessed) {
+    // Use ref instead of state to avoid race conditions
+    if (hasProcessedRef.current) {
+      console.log("[OAuth Callback] Already processed, skipping duplicate call");
       return;
     }
 
     const handleCallback = async () => {
-      setHasProcessed(true);
+      // Mark as processed immediately to prevent race conditions
+      hasProcessedRef.current = true;
+      console.log("[OAuth Callback] Starting OAuth code exchange");
       const code = searchParams.get("code");
       const state = searchParams.get("state");
       const errorParam = searchParams.get("error");
@@ -72,7 +76,10 @@ export default function GitHubOAuthCallback() {
     };
 
     handleCallback();
-  }, [searchParams, navigate, hasProcessed]);
+    // Empty dependency array - only run once on mount
+    // searchParams and navigate are stable and don't need to be in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">

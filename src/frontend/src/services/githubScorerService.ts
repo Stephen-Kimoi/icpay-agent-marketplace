@@ -53,3 +53,36 @@ export const scoreGitHub = async ({
   throw new Error(result.Err);
 };
 
+export const scoreGitHubPublic = async (
+  githubHandle: string
+): Promise<GitHubScoreResult> => {
+  const handle = githubHandle.trim().replace(/^@/, "");
+
+  if (!handle) {
+    throw new Error("GitHub handle cannot be empty");
+  }
+
+  if (!handle.match(/^[a-zA-Z0-9]([a-zA-Z0-9]|-(?![.-])){0,38}$/)) {
+    throw new Error("Invalid GitHub handle format");
+  }
+
+  const result = await backend.score_github_public(handle);
+  if ("Ok" in result) {
+    return {
+      score: result.Ok.score,
+      rank: Number(result.Ok.rank),
+      totalUsers: Number(result.Ok.total_users),
+      breakdown: {
+        commits: result.Ok.breakdown.commits,
+        activity: result.Ok.breakdown.activity,
+        languages: result.Ok.breakdown.languages,
+        repositories: result.Ok.breakdown.repositories,
+        contributions: result.Ok.breakdown.contributions,
+      },
+      details: result.Ok.details,
+    };
+  }
+
+  throw new Error(result.Err);
+};
+

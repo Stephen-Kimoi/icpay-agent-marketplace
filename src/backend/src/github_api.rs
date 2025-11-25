@@ -11,7 +11,7 @@ const GITHUB_API_BASE: &str = "https://api.github.com";
 /// Get the authenticated user's GitHub username from their token
 pub async fn get_authenticated_user(access_token: &str) -> Result<String, String> {
     let url = format!("{}/user", GITHUB_API_BASE);
-    let user_data = make_github_request(&url, access_token).await?;
+    let user_data = make_github_request(&url, Some(access_token)).await?;
     
     let username = user_data
         .get("login")
@@ -22,10 +22,10 @@ pub async fn get_authenticated_user(access_token: &str) -> Result<String, String
     Ok(username)
 }
 
-/// Fetch GitHub user metrics using the stored OAuth token
+/// Fetch GitHub user metrics using optional OAuth token
 pub async fn fetch_github_metrics(
     handle: &str,
-    access_token: &str,
+    access_token: Option<&str>,
 ) -> Result<GitHubMetrics, String> {
     ic_cdk::println!("Fetching GitHub metrics for user: {}", handle);
 
@@ -44,12 +44,12 @@ pub async fn fetch_github_metrics(
     Ok(metrics)
 }
 
-async fn fetch_user_data(handle: &str, token: &str) -> Result<Value, String> {
+async fn fetch_user_data(handle: &str, token: Option<&str>) -> Result<Value, String> {
     let url = format!("{}/users/{}", GITHUB_API_BASE, handle);
     make_github_request(&url, token).await
 }
 
-async fn fetch_user_repos(handle: &str, token: &str) -> Result<Vec<Value>, String> {
+async fn fetch_user_repos(handle: &str, token: Option<&str>) -> Result<Vec<Value>, String> {
     // Fetch first page of repos (up to 100)
     let url = format!("{}/users/{}/repos?per_page=100&sort=updated", GITHUB_API_BASE, handle);
     let repos_json = make_github_request(&url, token).await?;
@@ -62,7 +62,7 @@ async fn fetch_user_repos(handle: &str, token: &str) -> Result<Vec<Value>, Strin
     Ok(repos)
 }
 
-async fn fetch_contribution_stats(_handle: &str, _token: &str) -> Result<Value, String> {
+async fn fetch_contribution_stats(_handle: &str, _token: Option<&str>) -> Result<Value, String> {
     // Estimate based on repos and activity
     Ok(serde_json::json!({
         "contributions_last_year": 0, 
@@ -71,21 +71,24 @@ async fn fetch_contribution_stats(_handle: &str, _token: &str) -> Result<Value, 
     }))
 }
 
-async fn make_github_request(url: &str, token: &str) -> Result<Value, String> {
-    let headers = vec![
+async fn make_github_request(url: &str, token: Option<&str>) -> Result<Value, String> {
+    let mut headers = vec![
         HttpHeader {
             name: "Accept".to_string(),
             value: "application/vnd.github.v3+json".to_string(),
-        },
-        HttpHeader {
-            name: "Authorization".to_string(),
-            value: format!("Bearer {}", token),
         },
         HttpHeader {
             name: "User-Agent".to_string(),
             value: "ICPay-Agent-Marketplace".to_string(),
         },
     ];
+
+    if let Some(token) = token {
+        headers.push(HttpHeader {
+            name: "Authorization".to_string(),
+            value: format!("Bearer {}", token),
+        });
+    }
 
     let request = CanisterHttpRequestArgument {
         url: url.to_string(),

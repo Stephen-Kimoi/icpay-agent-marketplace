@@ -461,7 +461,7 @@ async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
     ic_cdk::println!("Scoring GitHub profile for handle: {}", handle);
     
     // Fetch GitHub metrics
-    let metrics = fetch_github_metrics(&handle, &token.access_token).await?;
+    let metrics = fetch_github_metrics(&handle, Some(&token.access_token)).await?;
     
     ic_cdk::println!("Fetched GitHub metrics: {} repos, {} commits", 
         metrics.repositories, metrics.total_commits);
@@ -475,6 +475,36 @@ async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
     ic_cdk::println!("Score calculated: {:.1}/100, rank: #{}", 
         score_result.score, score_result.rank);
     
+    Ok(score_result)
+}
+
+/// Score a public GitHub profile without requiring OAuth
+#[ic_cdk::update]
+async fn score_github_public(handle: String) -> Result<GitHubScoreResult, String> {
+    let trimmed = handle.trim();
+    if trimmed.is_empty() {
+        return Err("GitHub handle cannot be empty".to_string());
+    }
+
+    ic_cdk::println!("Scoring public GitHub profile for handle: {}", trimmed);
+
+    let metrics = fetch_github_metrics(trimmed, None).await?;
+
+    ic_cdk::println!(
+        "Fetched public GitHub metrics: {} repos, {} commits",
+        metrics.repositories,
+        metrics.total_commits
+    );
+
+    let total_users = 1000u64;
+    let score_result = GitHubScorer::calculate_score(&metrics, total_users).await?;
+
+    ic_cdk::println!(
+        "Public score calculated: {:.1}/100, rank: #{}",
+        score_result.score,
+        score_result.rank
+    );
+
     Ok(score_result)
 }
 
