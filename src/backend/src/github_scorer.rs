@@ -307,4 +307,3 @@ Calculate the score now:"#,
         estimated_rank.min(total_users)
     }
 }
-

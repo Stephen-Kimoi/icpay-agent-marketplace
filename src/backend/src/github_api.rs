@@ -95,14 +95,14 @@ async fn make_github_request(url: &str, token: Option<&str>) -> Result<Value, St
         method: HttpMethod::GET,
         headers,
         body: None,
-        max_response_bytes: Some(65536), // 64KB for API responses
+        max_response_bytes: Some(2000000), // 2MB
         transform: Some(TransformContext::from_name(
             "transform_github_api".to_string(),
             vec![],
         )),
     };
 
-    let cycles: u128 = 10_000_000_000;
+    let cycles: u128 = 30_000_000_000; // 30 billion cycles
     let (response,): (HttpResponse,) = match http_request(request, cycles).await {
         Ok(result) => result,
         Err((code, message)) => {
