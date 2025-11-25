@@ -1,7 +1,7 @@
 import { backend } from "../../../declarations/backend";
 
 export interface GitHubScorerParams {
-  githubHandle: string;
+  githubHandle?: string; // Optional - if not provided, uses authenticated user's GitHub username
 }
 
 export interface GitHubScoreResult {
@@ -21,18 +21,19 @@ export interface GitHubScoreResult {
 export const scoreGitHub = async ({
   githubHandle,
 }: GitHubScorerParams): Promise<GitHubScoreResult> => {
-  if (!githubHandle.trim()) {
-    throw new Error("GitHub handle cannot be empty");
+  // If handle is provided, validate it; otherwise backend will auto-detect from OAuth token
+  let handle = "";
+  if (githubHandle && githubHandle.trim()) {
+    // Remove @ if present
+    handle = githubHandle.trim().replace(/^@/, "");
+
+    if (!handle.match(/^[a-zA-Z0-9]([a-zA-Z0-9]|-(?![.-])){0,38}$/)) {
+      throw new Error("Invalid GitHub handle format");
+    }
   }
+  // If handle is empty, backend will auto-detect from OAuth token
 
-  // Remove @ if present
-  const handle = githubHandle.trim().replace(/^@/, "");
-
-  if (!handle.match(/^[a-zA-Z0-9]([a-zA-Z0-9]|-(?![.-])){0,38}$/)) {
-    throw new Error("Invalid GitHub handle format");
-  }
-
-  // Call backend to score GitHub profile
+  // Call backend to score GitHub profile (empty string = auto-detect)
   const result = await backend.score_github(handle);
   if ("Ok" in result) {
     return {

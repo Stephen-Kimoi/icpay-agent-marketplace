@@ -15,9 +15,16 @@ export default function GitHubOAuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
+  const [hasProcessed, setHasProcessed] = useState(false);
 
   useEffect(() => {
+    // Prevent duplicate processing (React StrictMode runs effects twice)
+    if (hasProcessed) {
+      return;
+    }
+
     const handleCallback = async () => {
+      setHasProcessed(true);
       const code = searchParams.get("code");
       const state = searchParams.get("state");
       const errorParam = searchParams.get("error");
@@ -65,7 +72,7 @@ export default function GitHubOAuthCallback() {
     };
 
     handleCallback();
-  }, [searchParams, navigate]);
+  }, [searchParams, navigate, hasProcessed]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">

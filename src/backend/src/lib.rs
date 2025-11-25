@@ -16,11 +16,12 @@ mod github_oauth;
 use github_oauth::{
     generate_authorization_url, exchange_code_for_token, get_token, has_token, revoke_token,
     set_github_oauth_config_internal, GitHubOAuthConfig, OAuthAuthorizationUrl, OAuthToken,
+    transform_github_oauth,
 };
 use ic_cdk::api::management_canister::http_request::{HttpResponse, TransformArgs};
 
 mod github_api;
-use github_api::fetch_github_metrics;
+use github_api::{fetch_github_metrics, get_authenticated_user, transform_github_api};
 
 mod github_scorer;
 use github_scorer::{GitHubScorer, GitHubScoreResult};
@@ -422,7 +423,24 @@ fn github_oauth_get_config() -> Result<GitHubOAuthConfig, String> {
 
 // ========== GitHub Scoring Functions ==========
 
+/// Get authenticated user's GitHub username
+#[ic_cdk::update]
+async fn github_get_username() -> Result<String, String> {
+    let caller = ic_cdk::caller();
+    let principal = caller.to_text();
+    
+    // Get user's GitHub token
+    let token = get_token(principal)
+        .ok_or_else(|| "GitHub not connected. Please authorize GitHub first.".to_string())?;
+    
+    // Get username from GitHub API
+    let username = get_authenticated_user(&token.access_token).await?;
+    
+    Ok(username)
+}
+
 /// Score a GitHub profile
+/// If handle is empty, uses the authenticated user's GitHub username
 #[ic_cdk::update]
 async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
     let caller = ic_cdk::caller();
@@ -431,6 +449,14 @@ async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
     // Get user's GitHub token
     let token = get_token(principal)
         .ok_or_else(|| "GitHub not connected. Please authorize GitHub first.".to_string())?;
+    
+    // If handle is empty, get it from the authenticated user
+    let handle = if handle.trim().is_empty() {
+        // Auto-detect username from OAuth token
+        get_authenticated_user(&token.access_token).await?
+    } else {
+        handle.trim().to_string()
+    };
     
     ic_cdk::println!("Scoring GitHub profile for handle: {}", handle);
     
@@ -450,6 +476,20 @@ async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
         score_result.score, score_result.rank);
     
     Ok(score_result)
+}
+
+/// Transform function for GitHub OAuth HTTP responses (required for consensus)
+/// This must be exported so IC can call it during HTTP outcall processing
+#[ic_cdk::query]
+fn transform_github_oauth_export(response: TransformArgs) -> HttpResponse {
+    transform_github_oauth(response)
+}
+
+/// Transform function for GitHub API HTTP responses (required for consensus)
+/// This must be exported so IC can call it during HTTP outcall processing
+#[ic_cdk::query]
+fn transform_github_api_export(response: TransformArgs) -> HttpResponse {
+    transform_github_api(response)
 }
 
 ic_cdk::export_candid!();

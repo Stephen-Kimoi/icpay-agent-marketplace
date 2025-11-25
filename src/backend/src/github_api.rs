@@ -1,5 +1,5 @@
 use ic_cdk::api::management_canister::http_request::{
-    http_request, CanisterHttpRequestArgument, HttpHeader, HttpMethod, HttpResponse, TransformContext,
+    http_request, CanisterHttpRequestArgument, HttpHeader, HttpMethod, HttpResponse, TransformArgs, TransformContext,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -7,6 +7,20 @@ use std::collections::HashMap;
 use crate::github_scorer::GitHubMetrics;
 
 const GITHUB_API_BASE: &str = "https://api.github.com";
+
+/// Get the authenticated user's GitHub username from their token
+pub async fn get_authenticated_user(access_token: &str) -> Result<String, String> {
+    let url = format!("{}/user", GITHUB_API_BASE);
+    let user_data = make_github_request(&url, access_token).await?;
+    
+    let username = user_data
+        .get("login")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Failed to get username from GitHub API".to_string())?
+        .to_string();
+    
+    Ok(username)
+}
 
 /// Fetch GitHub user metrics using the stored OAuth token
 pub async fn fetch_github_metrics(
@@ -49,13 +63,11 @@ async fn fetch_user_repos(handle: &str, token: &str) -> Result<Vec<Value>, Strin
 }
 
 async fn fetch_contribution_stats(_handle: &str, _token: &str) -> Result<Value, String> {
-    // Use GitHub's contribution graph API
-    // Note: This is a simplified version - GitHub's actual contribution graph is more complex
-    // For now, we'll estimate based on repos and activity
+    // Estimate based on repos and activity
     Ok(serde_json::json!({
-        "contributions_last_year": 0, // Will be calculated from repos
-        "pull_requests": 0, // Will be calculated from repos
-        "issues_opened": 0, // Will be calculated from repos
+        "contributions_last_year": 0, 
+        "pull_requests": 0, 
+        "issues_opened": 0,
     }))
 }
 
@@ -82,7 +94,7 @@ async fn make_github_request(url: &str, token: &str) -> Result<Value, String> {
         body: None,
         max_response_bytes: Some(65536), // 64KB for API responses
         transform: Some(TransformContext::from_name(
-            "transform".to_string(),
+            "transform_github_api".to_string(),
             vec![],
         )),
     };
@@ -125,16 +137,11 @@ fn calculate_metrics(
     
     // Calculate account age in days
     let account_age_days = if !created_at.is_empty() {
-        // Parse ISO 8601 date (simplified)
-        // Format: "2020-01-01T00:00:00Z"
         if created_at.split('T').next().is_some() {
-            // Very simplified - in production use proper date parsing
-            // For now, estimate based on current time
-            let now = ic_cdk::api::time() / 1_000_000_000; // Convert to seconds
-            // Assume account is at least 1 day old
-            (now / 86400).max(1) // Rough estimate in days
+            let now = ic_cdk::api::time() / 1_000_000_000;
+            (now / 86400).max(1)
         } else {
-            365 // Default to 1 year if parsing fails
+            365
         }
     } else {
         365
@@ -168,19 +175,15 @@ fn calculate_metrics(
             }
         }
 
-        // Estimate commits (GitHub API doesn't provide this directly without additional calls)
-        // We'll estimate based on repo size and age
         if let Some(size) = repo.get("size").and_then(|v| v.as_u64()) {
-            // Rough estimate: larger repos = more commits
-            total_commits += size / 10; // Rough heuristic
+            total_commits += size / 10;
         }
     }
 
     // Estimate contributions from repos
-    // In a full implementation, you'd fetch this from GitHub's contribution graph
-    let contributions_last_year = (repos_data.len() as u64 * 10).min(365); // Rough estimate
-    let pull_requests = (repos_data.len() as u64 * 5).min(100); // Rough estimate
-    let issues_opened = (repos_data.len() as u64 * 3).min(50); // Rough estimate
+    let contributions_last_year = (repos_data.len() as u64 * 10).min(365);
+    let pull_requests = (repos_data.len() as u64 * 5).min(100);
+    let issues_opened = (repos_data.len() as u64 * 3).min(50);
 
     Ok(GitHubMetrics {
         total_commits,
@@ -197,3 +200,11 @@ fn calculate_metrics(
     })
 }
 
+#[ic_cdk::query]
+pub fn transform_github_api(response: TransformArgs) -> HttpResponse {
+    HttpResponse {
+        status: response.response.status,
+        headers: vec![],
+        body: response.response.body,
+    }
+}

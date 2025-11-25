@@ -82,3 +82,12 @@ export const githubOAuthGetConfig = async (): Promise<GitHubOAuthConfig> => {
   throw new Error(result.Err);
 };
 
+/// Get authenticated user's GitHub username
+export const githubGetUsername = async (): Promise<string> => {
+  const result = await backend.github_get_username();
+  if ("Ok" in result) {
+    return result.Ok;
+  }
+  throw new Error(result.Err);
+};
+

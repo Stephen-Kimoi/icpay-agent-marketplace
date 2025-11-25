@@ -20,7 +20,7 @@ import {
   Link2,
 } from "lucide-react";
 import { scoreGitHub, type GitHubScoreResult } from "@/services/githubScorerService";
-import { githubOAuthAuthorize, githubHasToken } from "@/services/githubOAuthService";
+import { githubOAuthAuthorize, githubHasToken, githubGetUsername } from "@/services/githubOAuthService";
 import { usePaymentFlow } from "@/hooks/usePaymentFlow";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
@@ -35,6 +35,7 @@ export default function GitHubScorerAgent() {
   const [isConnected, setIsConnected] = useState(false);
   const [checkingConnection, setCheckingConnection] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [fetchingUsername, setFetchingUsername] = useState(false);
 
   const {
     state,
@@ -55,12 +56,26 @@ export default function GitHubScorerAgent() {
   const scoreResult = result?.scoreResult ?? null;
   const completed = state === "completed";
 
-  // Check GitHub connection status on mount
+  // Check GitHub connection status on mount and fetch username if connected
   useEffect(() => {
     const checkConnection = async () => {
       try {
         const connected = await githubHasToken();
         setIsConnected(connected);
+        
+        // If connected, auto-fetch the GitHub username
+        if (connected) {
+          setFetchingUsername(true);
+          try {
+            const username = await githubGetUsername();
+            setGithubHandle(username);
+          } catch (err) {
+            console.error("Error fetching GitHub username:", err);
+            // Don't set error state, just leave handle empty
+          } finally {
+            setFetchingUsername(false);
+          }
+        }
       } catch (err) {
         console.error("Error checking GitHub connection:", err);
         setIsConnected(false);
@@ -85,40 +100,41 @@ export default function GitHubScorerAgent() {
   };
 
   const quoteDescription = useMemo(() => {
-    if (!githubHandle.trim()) return "";
+    if (!githubHandle.trim()) {
+      return isConnected ? "Score your GitHub profile" : "";
+    }
     const handle = githubHandle.trim().replace(/^@/, "");
     return `Score GitHub profile "@${handle}"`;
-  }, [githubHandle]);
+  }, [githubHandle, isConnected]);
 
   const handleQuoteRequest = async () => {
-    const handle = githubHandle.trim().replace(/^@/, "");
-    
-    if (!handle) {
-      setError("Please enter a GitHub handle.");
-      return;
-    }
+    // If connected, we can score without handle (auto-detected)
+    // If not connected, handle is required
+    if (!isConnected) {
+      const handle = githubHandle.trim().replace(/^@/, "");
+      
+      if (!handle) {
+        setError("Please connect GitHub or enter a GitHub handle.");
+        return;
+      }
 
-    if (!handle.match(/^[a-zA-Z0-9]([a-zA-Z0-9]|-(?![.-])){0,38}$/)) {
-      setError("Invalid GitHub handle format. Please enter a valid username.");
-      return;
+      if (!handle.match(/^[a-zA-Z0-9]([a-zA-Z0-9]|-(?![.-])){0,38}$/)) {
+        setError("Invalid GitHub handle format. Please enter a valid username.");
+        return;
+      }
     }
 
     setError(null);
-
-    const handleToScore = handle;
 
     await requestQuote({
       request: quoteDescription,
       execute: async (jobId: string, quote: any) => {
         console.log("Executing GitHub scoring for job:", jobId);
-        
-        if (!handleToScore) {
-          throw new Error("GitHub handle is no longer available.");
-        }
 
         try {
+          // If handle is provided, use it; otherwise backend will auto-detect from OAuth
           const scoreResult = await scoreGitHub({
-            githubHandle: handleToScore,
+            githubHandle: githubHandle.trim() || undefined,
           });
 
           console.log("GitHub scoring completed successfully");
@@ -193,10 +209,10 @@ export default function GitHubScorerAgent() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-white">
-                  Enter your GitHub handle
+                  Connect your GitHub account
                 </h2>
                 <p className="mt-2 text-sm text-gray-400">
-                  Provide your GitHub username to analyze your profile and calculate your developer score.
+                  Connect your GitHub account to enable scoring
                 </p>
               </div>
               <div className="hidden sm:block rounded-full bg-purple-500/10 p-3">
@@ -217,9 +233,19 @@ export default function GitHubScorerAgent() {
                         <p className="text-sm font-semibold text-white">
                           GitHub Connected
                         </p>
-                        <p className="text-xs text-gray-400">
-                          You can now score GitHub profiles
-                        </p>
+                        {fetchingUsername ? (
+                          <p className="text-xs text-gray-400">
+                            Fetching your GitHub username...
+                          </p>
+                        ) : githubHandle ? (
+                          <p className="text-xs text-gray-400">
+                            Connected as <span className="font-mono text-purple-300">@{githubHandle}</span>
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-400">
+                            You can now score your GitHub profile
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -260,33 +286,36 @@ export default function GitHubScorerAgent() {
               </div>
             )}
 
-            <div className="mt-6">
-              <label className="group relative flex flex-col rounded-2xl border border-gray-800/80 bg-gray-900/60 p-5 transition focus-within:border-purple-500/60 focus-within:ring-2 focus-within:ring-purple-500/40">
-                <span className="text-sm font-semibold text-gray-200">
-                  GitHub Username
-                </span>
-                <div className="mt-3 flex items-center gap-3">
-                  <span className="text-gray-500">@</span>
-                  <input
-                    type="text"
-                    value={githubHandle.replace(/^@/, "")}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/^@/g, "");
-                      setGithubHandle(value);
-                      setError(null);
-                      if (state !== "idle" && state !== "error") {
-                        reset();
-                      }
-                    }}
-                    placeholder="username"
-                    className="flex-1 rounded-xl border border-dashed border-gray-800/60 bg-gray-950/40 px-4 py-3 text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
-                  />
-                </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  Enter your GitHub username (without @ symbol)
-                </p>
-              </label>
-            </div>
+            {/* Only show username input if not connected via OAuth */}
+            {/* {!isConnected && ( */}
+              {/* <div className="mt-6">
+                <label className="group relative flex flex-col rounded-2xl border border-gray-800/80 bg-gray-900/60 p-5 transition focus-within:border-purple-500/60 focus-within:ring-2 focus-within:ring-purple-500/40">
+                  <span className="text-sm font-semibold text-gray-200">
+                    GitHub Username
+                  </span>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="text-gray-500">@</span>
+                    <input
+                      type="text"
+                      value={githubHandle.replace(/^@/, "")}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/^@/g, "");
+                        setGithubHandle(value);
+                        setError(null);
+                        if (state !== "idle" && state !== "error") {
+                          reset();
+                        }
+                      }}
+                      placeholder="username"
+                      className="flex-1 rounded-xl border border-dashed border-gray-800/60 bg-gray-950/40 px-4 py-3 text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Enter your GitHub username (without @ symbol) or connect via OAuth above
+                  </p>
+                </label>
+              </div> */}
+            {/* )} */}
 
             {error && (
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
@@ -298,12 +327,12 @@ export default function GitHubScorerAgent() {
             <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-gray-800/70 bg-gray-900/50 p-6 text-sm text-gray-300 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 text-green-400" />
-                <span>Secure processing inside ICP canisters</span>
+                <span>Get your quote now!</span>
               </div>
               {state === "idle" || state === "error" || state === "completed" ? (
                 <Button
                   onClick={handleQuoteRequest}
-                  disabled={!githubHandle.trim() || loading || isProcessing}
+                  disabled={(!isConnected && !githubHandle.trim()) || loading || isProcessing || fetchingUsername}
                   className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? (
