@@ -39,6 +39,7 @@ interface UsePaymentFlowReturn<T> {
   reset: () => void;
   setError: (message: string | null) => void;
   simulatePayment?: () => Promise<void>;
+  skipContribution: () => Promise<void>;
 }
 
 export function usePaymentFlow<T>(
@@ -239,6 +240,47 @@ export function usePaymentFlow<T>(
     executeRef.current = null;
   }, []);
 
+  const skipContribution = useCallback(async () => {
+    if (!quote) {
+      setError("No quote available to skip contribution for.");
+      return;
+    }
+
+    const execute = executeRef.current;
+    if (!execute) {
+      setError("Execution handler not configured.");
+      return;
+    }
+
+    try {
+      setState("executing");
+      setError(null);
+
+      // Execute directly without payment
+      const executionResult = await execute(quote.job_id, quote);
+      setResult(executionResult);
+
+      setState("completed");
+    } catch (err) {
+      console.error("Error executing job without contribution:", err);
+      
+      let errorMessage = "Failed to execute job. Please try again.";
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        
+        // Provide more helpful error messages for common issues
+        if (err.message.includes("consensus") || err.message.includes("SysTransient")) {
+          errorMessage = "Service is temporarily unavailable due to network issues. Please wait a moment and try again.";
+        } else if (err.message.includes("GitHub API")) {
+          errorMessage = "Unable to access GitHub at the moment. Please try again in a few seconds.";
+        }
+      }
+      
+      setError(errorMessage);
+      setState("error");
+    }
+  }, [quote]);
+
   // Fetch ICPay config when quote or request description changes
   useEffect(() => {
     const fetchConfig = async () => {
@@ -274,6 +316,7 @@ export function usePaymentFlow<T>(
     handlePaymentError,
     reset,
     setError,
+    skipContribution,
     simulatePayment: mockPayment ? simulatePayment : undefined,
   };
 }

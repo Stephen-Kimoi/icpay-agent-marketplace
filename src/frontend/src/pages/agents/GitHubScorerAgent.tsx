@@ -40,6 +40,7 @@ export default function GitHubScorerAgent() {
   const [fetchingUsername, setFetchingUsername] = useState(false);
   const [scoringMode, setScoringMode] = useState<"connected" | "manual">("manual");
   const [mockPaymentEnabled, setMockPaymentEnabled] = useState(false);
+  const [showContributionOptions, setShowContributionOptions] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
   const {
@@ -57,6 +58,7 @@ export default function GitHubScorerAgent() {
     reset,
     setError,
     simulatePayment,
+    skipContribution,
   } = usePaymentFlow<ScoringResult>({
     mockPayment: mockPaymentEnabled,
     mockPrice: 0.05,
@@ -191,6 +193,9 @@ export default function GitHubScorerAgent() {
         }
       },
     });
+
+    // Show contribution options after getting quote
+    setShowContributionOptions(true);
   };
 
   const handleCopy = async () => {
@@ -241,8 +246,8 @@ export default function GitHubScorerAgent() {
                 </span>
               </h1>
               <p className="mx-auto max-w-2xl text-base text-gray-400">
-                Connect your GitHub handle to receive a comprehensive score based on commits, activity,
-                languages used, and contributions. Compare your rank against other developers in the network.
+                Get a comprehensive GitHub score based on commits, activity, languages, and contributions. 
+                Compare your rank against other developers. Free to use with optional contributions to support the project.
               </p>
             </div>
           </div>
@@ -400,7 +405,7 @@ export default function GitHubScorerAgent() {
               </div>
             )}
 
-            <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-5">
+            {/* <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-5">
               <label className="flex items-center gap-3 text-sm text-gray-300">
                 <input
                   type="checkbox"
@@ -411,12 +416,12 @@ export default function GitHubScorerAgent() {
                     setError(null);
                   }}
                 />
-                <span className="font-medium text-white">Enable mock payment (no real ICP)</span>
+                <span className="font-medium text-white">Enable mock contribution (no real ICP)</span>
               </label>
               <p className="text-xs text-gray-500">
-                When enabled, payments are simulated so you can test scoring without sending real ICP.
+                When enabled, contributions are simulated so you can test the flow without sending real ICP.
               </p>
-            </div>
+            </div> */}
 
             {error && (
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
@@ -435,7 +440,7 @@ export default function GitHubScorerAgent() {
             <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-gray-800/70 bg-gray-900/50 p-6 text-sm text-gray-300 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 text-green-400" />
-                <span>Get your quote now!</span>
+                <span>Ready to analyze your GitHub profile!</span>
               </div>
               {state === "idle" || state === "error" || state === "completed" ? (
                 <Button
@@ -454,34 +459,53 @@ export default function GitHubScorerAgent() {
                       Getting Quote...
                     </span>
                   ) : (
-                    "Get Score Quote"
+                    "Analyze GitHub Profile"
                   )}
                 </Button>
               ) : state === "quoted" ? (
-                mockPaymentEnabled ? (
-                  <Button
-                    onClick={async () => {
-                      if (simulatePayment) {
-                        await simulatePayment();
-                      }
-                    }}
-                    className="flex-1 bg-gradient-to-r from-green-500 via-lime-500 to-emerald-500 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(34,197,94,0.6)] transition hover:from-green-400 hover:via-lime-400 hover:to-emerald-400"
-                  >
-                    Simulate Payment
-                  </Button>
-                ) : icpayConfig ? (
-                  <div className="flex-1">
-                    <IcpayPayButton
-                      config={icpayConfig}
-                      onSuccess={handlePaymentSuccess}
-                      onError={handlePaymentError}
-                    />
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-4">
+                    <h3 className="mb-2 text-sm font-semibold text-blue-200">
+                      💝 Support the Project (Optional)
+                    </h3>
+                    <p className="mb-3 text-xs text-blue-300/80">
+                      Your contribution helps maintain and improve this service. You can also skip and get your results for free!
+                    </p>
+                    <div className="flex gap-2">
+                      {mockPaymentEnabled ? (
+                        <Button
+                          onClick={async () => {
+                            if (simulatePayment) {
+                              await simulatePayment();
+                            }
+                          }}
+                          className="flex-1 bg-gradient-to-r from-green-500 via-lime-500 to-emerald-500 px-4 py-2 text-sm font-semibold shadow-[0_18px_45px_-18px_rgba(34,197,94,0.6)] transition hover:from-green-400 hover:via-lime-400 hover:to-emerald-400"
+                        >
+                          Make a Contribution
+                        </Button>
+                      ) : icpayConfig ? (
+                        <div className="flex-1">
+                          <IcpayPayButton
+                            config={icpayConfig}
+                            onSuccess={handlePaymentSuccess}
+                            onError={handlePaymentError}
+                          />
+                        </div>
+                      ) : (
+                        <Button disabled className="flex-1 opacity-60 text-sm">
+                          Preparing contribution...
+                        </Button>
+                      )}
+                      <Button
+                        onClick={skipContribution}
+                        variant="outline"
+                        className="border-gray-600 text-gray-300 hover:bg-gray-700 px-4 py-2 text-sm"
+                      >
+                        Skip & Get Results
+                      </Button>
+                    </div>
                   </div>
-                ) : (
-                  <Button disabled className="flex-1 opacity-60">
-                    Preparing payment...
-                  </Button>
-                )
+                </div>
               ) : state === "waiting_for_payment" || state === "executing" ? (
                 <Button
                   disabled
@@ -500,7 +524,7 @@ export default function GitHubScorerAgent() {
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-purple-300/70">
-                      Quoted Price
+                      Suggested Contribution
                     </p>
                     <p className="text-2xl font-semibold text-purple-100">
                       {quote.price} {quote.currency}
@@ -534,8 +558,17 @@ export default function GitHubScorerAgent() {
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-green-500/40 bg-green-500/10 p-4 text-sm text-green-100">
                 <CheckCircle2 className="h-4 w-4 text-green-300" />
                 <span>
-                  Payment confirmed. Transaction ID:{" "}
+                  Thank you for your contribution! Transaction ID:{" "}
                   <span className="font-mono">{paymentResult.transactionId}</span>
+                </span>
+              </div>
+            )}
+
+            {completed && !paymentResult && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-500/10 p-4 text-sm text-blue-100">
+                <CheckCircle2 className="h-4 w-4 text-blue-300" />
+                <span>
+                  Analysis completed! Consider supporting the project with a contribution next time.
                 </span>
               </div>
             )}
