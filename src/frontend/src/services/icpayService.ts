@@ -16,6 +16,8 @@ export interface ICPayConfig {
     mode: 'modal' | 'horizontal' | 'vertical' | 'inline';
   };
   metadata?: Record<string, number | string>;
+  debug?: boolean;
+  timeout?: number; // Timeout in milliseconds
 }
 
 /**
@@ -136,7 +138,9 @@ export const createICPayConfig = async (
     amountUsd,
     defaultSymbol: quote.currency === "ICP" ? "ICP" : "ICP",
     showLedgerDropdown: 'dropdown',
-    progressBar: { enabled: true, mode: 'modal' },
+    progressBar: { enabled: true, mode: 'inline' },
+    debug: true, // Enable debug mode for troubleshooting
+    timeout: 120000, // 2 minute timeout to prevent hanging
     metadata: {
       job_id: Number(quote.job_id),
       request: userRequest,
@@ -171,6 +175,8 @@ export const handlePaymentSuccess = (detail: IcpaySuccess | any): PaymentResult 
  */
 export const handlePaymentError = (error: unknown): string => {
   console.error("Payment error:", error);
+  console.error("Payment error type:", typeof error);
+  console.error("Payment error stringified:", JSON.stringify(error, null, 2));
   
   let errorMessage = 'Payment failed. Please try again.';
   
@@ -182,8 +188,14 @@ export const handlePaymentError = (error: unknown): string => {
       errorMessage = 'ICPay authentication failed. Please check your publishable key (PUBLIC_KEY) in your environment variables.';
     } else if (msg.includes('CORS') || msg.includes('Failed to fetch')) {
       errorMessage = 'Network error. Please ensure your Internet Computer replica is running and accessible. If using a wallet, check that the IC replica endpoint is configured correctly.';
+    } else if (msg.includes('timeout') || msg.includes('Timeout')) {
+      errorMessage = 'Payment timed out. This can happen if the wallet takes too long to respond. Please try again.';
+    } else if (msg.includes('rejected') || msg.includes('cancelled') || msg.includes('denied')) {
+      errorMessage = 'Payment was cancelled or rejected by the wallet. Please try again if this was unintentional.';
+    } else if (msg.includes('insufficient') || msg.includes('balance')) {
+      errorMessage = 'Insufficient balance in your wallet. Please ensure you have enough funds and try again.';
     } else {
-      errorMessage = msg;
+      errorMessage = `Payment failed: ${msg}`;
     }
   }
   

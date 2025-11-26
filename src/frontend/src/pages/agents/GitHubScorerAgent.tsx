@@ -492,7 +492,7 @@ export default function GitHubScorerAgent() {
 
 
                       {/* Action Buttons */}
-                      <div className="flex flex-col gap-3 sm:flex-row">
+                      <div className="space-y-3">
                         {mockPaymentEnabled ? (
                           <Button
                             onClick={async () => {
@@ -500,14 +500,14 @@ export default function GitHubScorerAgent() {
                                 await simulatePayment();
                               }
                             }}
-                            className="flex-1 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-700 px-6 py-4 text-base font-semibold shadow-[0_20px_40px_-12px_rgba(168,85,247,0.4)] transition-all duration-300 hover:scale-[1.02] hover:from-purple-500 hover:via-pink-500 hover:to-purple-600 hover:shadow-[0_25px_50px_-12px_rgba(168,85,247,0.6)]"
+                            className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-700 px-6 py-4 text-base font-semibold shadow-[0_20px_40px_-12px_rgba(168,85,247,0.4)] transition-all duration-300 hover:scale-[1.02] hover:from-purple-500 hover:via-pink-500 hover:to-purple-600 hover:shadow-[0_25px_50px_-12px_rgba(168,85,247,0.6)]"
                           >
-                            <span className="flex items-center gap-2">
+                            <span className="flex items-center justify-center gap-2">
                               ✨ Pay
                             </span>
                           </Button>
                         ) : icpayConfig ? (
-                          <div className="flex-1">
+                          <div className="w-full min-h-[120px] rounded-lg overflow-hidden">
                             <IcpayPayButton
                               config={icpayConfig}
                               onSuccess={handlePaymentSuccess}
@@ -515,8 +515,8 @@ export default function GitHubScorerAgent() {
                             />
                           </div>
                         ) : (
-                          <Button disabled className="flex-1 px-6 py-4 text-base opacity-60">
-                            <span className="flex items-center gap-2">
+                          <Button disabled className="w-full px-6 py-4 text-base opacity-60">
+                            <span className="flex items-center justify-center gap-2">
                               <Loader2 className="h-4 w-4 animate-spin" />
                               Preparing contribution...
                             </span>
@@ -526,9 +526,9 @@ export default function GitHubScorerAgent() {
                         <Button
                           onClick={skipContribution}
                           variant="outline"
-                          className="border-2 border-gray-600/50 bg-gray-800/50 px-6 py-4 text-base font-medium text-gray-200 backdrop-blur-sm transition-all duration-300 hover:border-gray-500 hover:bg-gray-700/50 hover:text-white sm:flex-1"
+                          className="w-full border-2 border-gray-600/50 bg-gray-800/50 px-6 py-4 text-base font-medium text-gray-200 backdrop-blur-sm transition-all duration-300 hover:border-gray-500 hover:bg-gray-700/50 hover:text-white"
                         >
-                          <span className="flex items-center gap-2">
+                          <span className="flex items-center justify-center gap-2">
                             Skip & Get Results Free
                           </span>
                         </Button>
