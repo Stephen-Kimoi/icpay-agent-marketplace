@@ -463,46 +463,105 @@ export default function GitHubScorerAgent() {
                   )}
                 </Button>
               ) : state === "quoted" ? (
-                <div className="flex flex-col gap-3">
-                  <div className="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-4">
-                    <h3 className="mb-2 text-sm font-semibold text-blue-200">
-                      💝 Support the Project (Optional)
-                    </h3>
-                    <p className="mb-3 text-xs text-blue-300/80">
-                      Your contribution helps maintain and improve this service. You can also skip and get your results for free!
-                    </p>
-                    <div className="flex gap-2">
-                      {mockPaymentEnabled ? (
-                        <Button
-                          onClick={async () => {
-                            if (simulatePayment) {
-                              await simulatePayment();
-                            }
-                          }}
-                          className="flex-1 bg-gradient-to-r from-green-500 via-lime-500 to-emerald-500 px-4 py-2 text-sm font-semibold shadow-[0_18px_45px_-18px_rgba(34,197,94,0.6)] transition hover:from-green-400 hover:via-lime-400 hover:to-emerald-400"
-                        >
-                          Make a Contribution
-                        </Button>
-                      ) : icpayConfig ? (
-                        <div className="flex-1">
-                          <IcpayPayButton
-                            config={icpayConfig}
-                            onSuccess={handlePaymentSuccess}
-                            onError={handlePaymentError}
-                          />
+                <div className="space-y-6">
+                  {/* Contribution Section */}
+                  <div className="relative overflow-hidden rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-blue-500/10 p-6 backdrop-blur-sm">
+                    {/* Background decoration */}
+                    <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-gradient-to-br from-purple-400/20 to-pink-400/20 blur-2xl"></div>
+                    <div className="absolute -bottom-6 -left-6 h-32 w-32 rounded-full bg-gradient-to-tr from-blue-400/15 to-purple-400/15 blur-3xl"></div>
+                    
+                    <div className="relative">
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-lg">
+                          💝
                         </div>
-                      ) : (
-                        <Button disabled className="flex-1 opacity-60 text-sm">
-                          Preparing contribution...
-                        </Button>
+                        <div>
+                          <h3 className="text-lg font-bold text-white">
+                            Support the Project
+                          </h3>
+                          <p className="text-sm text-purple-200/80">
+                            Optional • Help us keep improving
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <p className="mb-6 text-sm leading-relaxed text-gray-300">
+                        Your contribution helps maintain and improve this service for everyone. 
+                        <span className="font-semibold text-purple-200"> You can also skip and get your results completely free!</span>
+                      </p>
+
+                      {/* Price Display */}
+                      {quote && (
+                        <div className="mb-6 flex items-center justify-center">
+                          <div className="rounded-2xl border border-purple-400/30 bg-purple-500/10 px-6 py-4 text-center backdrop-blur-sm">
+                            <p className="text-xs font-medium uppercase tracking-wider text-purple-300">
+                              Suggested Amount
+                            </p>
+                            <p className="text-3xl font-bold text-white">
+                              {quote.price} <span className="text-lg text-purple-200">{quote.currency}</span>
+                            </p>
+                          </div>
+                        </div>
                       )}
-                      <Button
-                        onClick={skipContribution}
-                        variant="outline"
-                        className="border-gray-600 text-gray-300 hover:bg-gray-700 px-4 py-2 text-sm"
-                      >
-                        Skip & Get Results
-                      </Button>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        {mockPaymentEnabled ? (
+                          <Button
+                            onClick={async () => {
+                              if (simulatePayment) {
+                                await simulatePayment();
+                              }
+                            }}
+                            className="flex-1 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-700 px-6 py-4 text-base font-semibold shadow-[0_20px_40px_-12px_rgba(168,85,247,0.4)] transition-all duration-300 hover:scale-[1.02] hover:from-purple-500 hover:via-pink-500 hover:to-purple-600 hover:shadow-[0_25px_50px_-12px_rgba(168,85,247,0.6)]"
+                          >
+                            <span className="flex items-center gap-2">
+                              ✨ Make a Contribution
+                            </span>
+                          </Button>
+                        ) : icpayConfig ? (
+                          <div className="flex-1">
+                            <IcpayPayButton
+                              config={icpayConfig}
+                              onSuccess={handlePaymentSuccess}
+                              onError={handlePaymentError}
+                            />
+                          </div>
+                        ) : (
+                          <Button disabled className="flex-1 px-6 py-4 text-base opacity-60">
+                            <span className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Preparing contribution...
+                            </span>
+                          </Button>
+                        )}
+                        
+                        <Button
+                          onClick={skipContribution}
+                          variant="outline"
+                          className="border-2 border-gray-600/50 bg-gray-800/50 px-6 py-4 text-base font-medium text-gray-200 backdrop-blur-sm transition-all duration-300 hover:border-gray-500 hover:bg-gray-700/50 hover:text-white sm:flex-1"
+                        >
+                          <span className="flex items-center gap-2">
+                            Skip & Get Results Free
+                          </span>
+                        </Button>
+                      </div>
+
+                      {/* Trust indicators */}
+                      <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />
+                          Secure payment
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />
+                          No hidden fees
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />
+                          Always optional
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -519,57 +578,65 @@ export default function GitHubScorerAgent() {
               ) : null}
             </div>
 
-            {quote && state !== "completed" && (
-              <div className="mt-6 rounded-2xl border border-purple-500/40 bg-purple-500/10 p-5 text-sm text-purple-100">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-purple-300/70">
-                      Suggested Contribution
-                    </p>
-                    <p className="text-2xl font-semibold text-purple-100">
-                      {quote.price} {quote.currency}
-                    </p>
+            {/* Quote display is now integrated into the contribution section above */}
+
+            {state === "waiting_for_payment" && (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-yellow-500/30 bg-gradient-to-r from-yellow-500/10 via-orange-500/10 to-yellow-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-orange-500">
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
                   </div>
-                  {paymentResult && (
-                    <div className="text-xs text-purple-200/70">
-                      Last transaction:{" "}
-                      <span className="font-mono">{paymentResult.transactionId}</span>
-                    </div>
-                  )}
+                  <div>
+                    <p className="font-semibold text-yellow-100">Processing contribution...</p>
+                    <p className="text-xs text-yellow-200/80">Awaiting ICPay settlement</p>
+                  </div>
                 </div>
               </div>
             )}
 
-            {state === "waiting_for_payment" && (
-              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-100">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Awaiting ICPay settlement...</span>
-              </div>
-            )}
-
             {state === "executing" && (
-              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-500/10 p-4 text-sm text-blue-100">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Analyzing GitHub profile in the canister...</span>
+              <div className="mt-6 overflow-hidden rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-500">
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-100">Analyzing GitHub profile...</p>
+                    <p className="text-xs text-blue-200/80">Processing your data in the canister</p>
+                  </div>
+                </div>
               </div>
             )}
 
             {paymentResult && completed && (
-              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-green-500/40 bg-green-500/10 p-4 text-sm text-green-100">
-                <CheckCircle2 className="h-4 w-4 text-green-300" />
-                <span>
-                  Thank you for your contribution! Transaction ID:{" "}
-                  <span className="font-mono">{paymentResult.transactionId}</span>
-                </span>
+              <div className="mt-6 overflow-hidden rounded-2xl border border-green-500/30 bg-gradient-to-r from-green-500/10 via-emerald-500/10 to-green-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white">
+                    ✨
+                  </div>
+                  <div>
+                    <p className="font-semibold text-green-100">Thank you for your contribution!</p>
+                    <p className="text-xs text-green-200/80">
+                      Transaction ID: <span className="font-mono">{paymentResult.transactionId}</span>
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
             {completed && !paymentResult && (
-              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-blue-500/40 bg-blue-500/10 p-4 text-sm text-blue-100">
-                <CheckCircle2 className="h-4 w-4 text-blue-300" />
-                <span>
-                  Analysis completed! Consider supporting the project with a contribution next time.
-                </span>
+              <div className="mt-6 overflow-hidden rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-500 text-white">
+                    🚀
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-100">Analysis completed successfully!</p>
+                    <p className="text-xs text-blue-200/80">
+                      Consider supporting the project with a contribution next time 💜
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
