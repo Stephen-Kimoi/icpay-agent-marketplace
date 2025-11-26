@@ -7,6 +7,44 @@ use ic_llm;
 
 use crate::github_scorer::GitHubMetrics;
 
+/// Parse GitHub's ISO 8601 timestamp to days since creation
+fn parse_github_date_to_days(created_at: &str) -> u64 {
+    // Parse GitHub's ISO 8601 timestamp (e.g., "2019-01-25T18:44:36Z")
+    if let Some(date_part) = created_at.split('T').next() {
+        // Parse date in YYYY-MM-DD format
+        let date_parts: Vec<&str> = date_part.split('-').collect();
+        if date_parts.len() == 3 {
+            if let (Ok(year), Ok(month), Ok(day)) = (
+                date_parts[0].parse::<i32>(),
+                date_parts[1].parse::<u32>(),
+                date_parts[2].parse::<u32>(),
+            ) {
+                // Calculate days since creation (rough approximation)
+                let current_year = 2024;
+                let current_month = 11; // November
+                let current_day = 26;
+                
+                // Calculate total days for created date
+                let created_total_days = (year * 365) + ((month - 1) * 30) as i32 + day as i32;
+                
+                // Calculate total days for current date
+                let current_total_days = (current_year * 365) + ((current_month - 1) * 30) + current_day;
+                
+                let days_diff = (current_total_days - created_total_days).max(1) as u64;
+                
+                // Cap at reasonable limits
+                days_diff.min(365 * 15) // Max 15 years
+            } else {
+                365 // Default to 1 year if parsing fails
+            }
+        } else {
+            365
+        }
+    } else {
+        365
+    }
+}
+
 const GITHUB_API_BASE: &str = "https://api.github.com";
 
 /// Get the authenticated user's GitHub username from their token
@@ -141,14 +179,9 @@ async fn calculate_metrics(
     
     // Calculate account age in days
     let account_age_days = if !created_at.is_empty() {
-        if created_at.split('T').next().is_some() {
-            let now = ic_cdk::api::time() / 1_000_000_000;
-            (now / 86400).max(1)
-        } else {
-            365
-        }
+        parse_github_date_to_days(created_at)
     } else {
-        365
+        365 // Default to 1 year if no date provided
     };
 
     // Calculate metrics from repositories
@@ -186,8 +219,23 @@ async fn calculate_metrics(
 
     // Estimate contributions from repos (focus on this year)
     let contributions_this_year = (repos_data.len() as u64 * 8).min(365);
-    let pull_requests = (repos_data.len() as u64 * 5).min(100);
-    let issues_opened = (repos_data.len() as u64 * 3).min(50);
+    
+    // More realistic estimates for PRs and issues based on actual repo activity
+    let pull_requests = if repos_data.len() > 20 {
+        (repos_data.len() as u64 * 2).min(80)
+    } else if repos_data.len() > 10 {
+        (repos_data.len() as u64 * 3).min(40)
+    } else {
+        (repos_data.len() as u64 * 1).min(15)
+    };
+    
+    let issues_opened = if repos_data.len() > 15 {
+        (repos_data.len() as u64 * 2).min(60)
+    } else if repos_data.len() > 5 {
+        (repos_data.len() as u64 * 2).min(25)
+    } else {
+        (repos_data.len() as u64 * 1).min(10)
+    };
     
     // Generate monthly commit data using LLM for realistic patterns
     let monthly_commits = generate_monthly_commits_with_llm(

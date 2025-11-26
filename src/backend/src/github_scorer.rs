@@ -60,7 +60,7 @@ impl GitHubScorer {
         let rank = Self::calculate_rank(score, total_users);
         
         Ok(GitHubScoreResult {
-            score,
+            score: (score * 10.0).round() / 10.0, // Round to 1 decimal place
             rank,
             total_users,
             breakdown,
@@ -157,26 +157,26 @@ Calculate the score now:"#,
                         .ok_or_else(|| "Missing breakdown in LLM response".to_string())?;
                     
                     let breakdown = ScoreBreakdown {
-                        commits: breakdown_obj
-                            .get("commits")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0),
-                        activity: breakdown_obj
-                            .get("activity")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0),
-                        languages: breakdown_obj
-                            .get("languages")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0),
-                        repositories: breakdown_obj
-                            .get("repositories")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0),
-                        contributions: breakdown_obj
-                            .get("contributions")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0),
+                        commits: {
+                            let val = breakdown_obj.get("commits").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            (val * 10.0).round() / 10.0
+                        },
+                        activity: {
+                            let val = breakdown_obj.get("activity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            (val * 10.0).round() / 10.0
+                        },
+                        languages: {
+                            let val = breakdown_obj.get("languages").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            (val * 10.0).round() / 10.0
+                        },
+                        repositories: {
+                            let val = breakdown_obj.get("repositories").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            (val * 10.0).round() / 10.0
+                        },
+                        contributions: {
+                            let val = breakdown_obj.get("contributions").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            (val * 10.0).round() / 10.0
+                        },
                     };
                     
                     let details = json
@@ -238,11 +238,11 @@ Calculate the score now:"#,
         let total_score = commits_score + activity_score + languages_score + repos_score + contributions_score;
         
         let breakdown = ScoreBreakdown {
-            commits: commits_score,
-            activity: activity_score,
-            languages: languages_score,
-            repositories: repos_score,
-            contributions: contributions_score,
+            commits: (commits_score * 10.0).round() / 10.0,
+            activity: (activity_score * 10.0).round() / 10.0,
+            languages: (languages_score * 10.0).round() / 10.0,
+            repositories: (repos_score * 10.0).round() / 10.0,
+            contributions: (contributions_score * 10.0).round() / 10.0,
         };
         
         let details = Self::generate_default_details(total_score, &breakdown, metrics);
@@ -258,24 +258,6 @@ Calculate the score now:"#,
         // Format account age in a human-readable way
         let account_age_formatted = Self::format_account_age(metrics.account_age_days);
         
-        // Generate monthly commit breakdown
-        let monthly_breakdown = if !metrics.monthly_commits.is_empty() {
-            let total_monthly: u64 = metrics.monthly_commits.iter().sum();
-            let avg_monthly = if metrics.monthly_commits.len() > 0 {
-                total_monthly / metrics.monthly_commits.len() as u64
-            } else {
-                0
-            };
-            format!(
-                "  - Monthly breakdown: {} commits over {} months (avg: {} per month)",
-                total_monthly,
-                metrics.monthly_commits.len(),
-                avg_monthly
-            )
-        } else {
-            "  - Monthly breakdown: Data not available".to_string()
-        };
-        
         format!(
             r#"## GitHub Score Analysis
 
@@ -285,7 +267,6 @@ Calculate the score now:"#,
 
 - **Commits**: {:.1} points
   - Total commits: {}
-{}
   - Consistent development activity shows dedication
 
 - **Activity**: {:.1} points
@@ -319,7 +300,6 @@ Calculate the score now:"#,
             score,
             breakdown.commits,
             metrics.total_commits,
-            monthly_breakdown,
             breakdown.activity,
             metrics.contributions_this_year,
             breakdown.languages,
@@ -367,15 +347,15 @@ Calculate the score now:"#,
         if score >= 90.0 {
             1 // Top tier
         } else if score >= 80.0 {
-            (101.0 - score) as u64 // Ranks 2-21 for scores 80-89
+            ((101.0 - score).round() as u64).max(2) // Ranks 2-21 for scores 80-89
         } else if score >= 70.0 {
-            (201.0 - score) as u64 // Ranks 131-201 for scores 70-79
+            ((201.0 - score).round() as u64).max(131) // Ranks 131-201 for scores 70-79
         } else if score >= 60.0 {
-            (301.0 - score) as u64 // Ranks 241-301 for scores 60-69
+            ((301.0 - score).round() as u64).max(241) // Ranks 241-301 for scores 60-69
         } else if score >= 50.0 {
-            (501.0 - score) as u64 // Ranks 451-501 for scores 50-59
+            ((501.0 - score).round() as u64).max(451) // Ranks 451-501 for scores 50-59
         } else {
-            (1001.0 - (score * 10.0)) as u64 // Lower ranks for scores < 50
+            ((1001.0 - (score * 10.0)).round() as u64).max(501) // Lower ranks for scores < 50
         }
     }
 }

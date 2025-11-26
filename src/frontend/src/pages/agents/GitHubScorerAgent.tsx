@@ -547,7 +547,7 @@ export default function GitHubScorerAgent() {
                       <span>Overall Score</span>
                     </div>
                     <p className={`text-5xl font-bold ${getScoreColor(scoreResult.score)}`}>
-                      {scoreResult.score}
+                      {scoreResult.score.toFixed(1)}
                     </p>
                     <p className="mt-1 text-xs text-gray-400">out of 100</p>
                   </div>
@@ -574,7 +574,7 @@ export default function GitHubScorerAgent() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>Commits</span>
-                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.commits} pts</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.commits.toFixed(1)} pts</span>
                         </div>
                       </div>
                     </div>
@@ -583,7 +583,7 @@ export default function GitHubScorerAgent() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>Activity</span>
-                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.activity} pts</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.activity.toFixed(1)} pts</span>
                         </div>
                       </div>
                     </div>
@@ -592,7 +592,7 @@ export default function GitHubScorerAgent() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>Languages</span>
-                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.languages} pts</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.languages.toFixed(1)} pts</span>
                         </div>
                       </div>
                     </div>
@@ -601,7 +601,7 @@ export default function GitHubScorerAgent() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>Repositories</span>
-                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.repositories} pts</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.repositories.toFixed(1)} pts</span>
                         </div>
                       </div>
                     </div>
@@ -610,7 +610,7 @@ export default function GitHubScorerAgent() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>Contributions</span>
-                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.contributions} pts</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.contributions.toFixed(1)} pts</span>
                         </div>
                       </div>
                     </div>
