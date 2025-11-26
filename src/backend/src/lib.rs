@@ -26,6 +26,9 @@ use github_api::{fetch_github_metrics, get_authenticated_user, transform_github_
 mod github_scorer;
 use github_scorer::{GitHubScorer, GitHubScoreResult};
 
+mod github_ranking;
+use github_ranking::{GitHubRanking, LeaderboardEntry};
+
 // Types for the API
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct Quote {
@@ -76,6 +79,8 @@ thread_local! {
     static RESULTS: RefCell<HashMap<String, JobResult>> = RefCell::default();
     static JOB_COUNTER: RefCell<u64> = RefCell::new(0);
     static PDF_UPLOADS: RefCell<HashMap<String, Vec<u8>>> = RefCell::default();
+    static GITHUB_RANKINGS: RefCell<HashMap<String, GitHubScoreResult>> = RefCell::default();
+    static RANKING_COUNTER: RefCell<u64> = RefCell::new(0);
 }
 
 // Calculate the cost based on request complexity using AI
@@ -460,22 +465,41 @@ async fn score_github(handle: String) -> Result<GitHubScoreResult, String> {
     
     ic_cdk::println!("Scoring GitHub profile for handle: {}", handle);
     
-    // Fetch GitHub metrics
+    // Check if user already exists in rankings
+    let existing_score = GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::get_existing_score(&handle, &rankings_ref)
+    });
+    
+    if let Some(existing_result) = existing_score {
+        ic_cdk::println!("User {} already ranked with score {:.1}", handle, existing_result.score);
+        return Ok(existing_result);
+    }
+    
+    // Fetch GitHub metrics for new user
     let metrics = fetch_github_metrics(&handle, Some(&token.access_token)).await?;
     
     ic_cdk::println!("Fetched GitHub metrics: {} repos, {} commits", 
         metrics.repositories, metrics.total_commits);
     
-    // Get total users count (simplified - in production, query from storage)
-    let total_users = 1000u64; // TODO: Get from actual storage
+    // Get current total users count
+    let total_users = GITHUB_RANKINGS.with(|rankings| {
+        rankings.borrow().len() as u64 + 1 // +1 for the new user
+    });
     
     // Calculate score using LLM
     let score_result = GitHubScorer::calculate_score(&metrics, total_users).await?;
     
-    ic_cdk::println!("Score calculated: {:.1}/100, rank: #{}", 
-        score_result.score, score_result.rank);
+    // Add to rankings and get updated result with correct rank
+    let final_result = GITHUB_RANKINGS.with(|rankings| {
+        let mut rankings_mut = rankings.borrow_mut();
+        GitHubRanking::add_or_update_score(handle.clone(), score_result, &mut rankings_mut)
+    });
     
-    Ok(score_result)
+    ic_cdk::println!("Score calculated: {:.1}/100, rank: #{}", 
+        final_result.score, final_result.rank);
+    
+    Ok(final_result)
 }
 
 /// Score a public GitHub profile without requiring OAuth
@@ -487,6 +511,17 @@ async fn score_github_public(handle: String) -> Result<GitHubScoreResult, String
     }
 
     ic_cdk::println!("Scoring public GitHub profile for handle: {}", trimmed);
+    
+    // Check if user already exists in rankings
+    let existing_score = GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::get_existing_score(trimmed, &rankings_ref)
+    });
+    
+    if let Some(existing_result) = existing_score {
+        ic_cdk::println!("User {} already ranked with score {:.1}", trimmed, existing_result.score);
+        return Ok(existing_result);
+    }
 
     let metrics = fetch_github_metrics(trimmed, None).await?;
 
@@ -496,16 +531,26 @@ async fn score_github_public(handle: String) -> Result<GitHubScoreResult, String
         metrics.total_commits
     );
 
-    let total_users = 1000u64;
+    // Get current total users count
+    let total_users = GITHUB_RANKINGS.with(|rankings| {
+        rankings.borrow().len() as u64 + 1 // +1 for the new user
+    });
+    
     let score_result = GitHubScorer::calculate_score(&metrics, total_users).await?;
+    
+    // Add to rankings and get updated result with correct rank
+    let final_result = GITHUB_RANKINGS.with(|rankings| {
+        let mut rankings_mut = rankings.borrow_mut();
+        GitHubRanking::add_or_update_score(trimmed.to_string(), score_result, &mut rankings_mut)
+    });
 
     ic_cdk::println!(
         "Public score calculated: {:.1}/100, rank: #{}",
-        score_result.score,
-        score_result.rank
+        final_result.score,
+        final_result.rank
     );
 
-    Ok(score_result)
+    Ok(final_result)
 }
 
 /// Transform function for GitHub OAuth HTTP responses (required for consensus)
@@ -520,6 +565,71 @@ fn transform_github_oauth_export(response: TransformArgs) -> HttpResponse {
 #[ic_cdk::query]
 fn transform_github_api_export(response: TransformArgs) -> HttpResponse {
     transform_github_api(response)
+}
+
+/// Get the GitHub leaderboard (top N users)
+#[ic_cdk::query]
+fn get_github_leaderboard(limit: Option<u64>) -> Vec<LeaderboardEntry> {
+    GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::get_leaderboard(&rankings_ref, limit)
+    })
+}
+
+/// Get GitHub ranking statistics
+#[ic_cdk::query]
+fn get_github_ranking_stats() -> github_ranking::GitHubRankingStats {
+    GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::get_ranking_stats(&rankings_ref)
+    })
+}
+
+/// Search for users in the rankings
+#[ic_cdk::query]
+fn search_github_rankings(query: String, limit: Option<u64>) -> Vec<LeaderboardEntry> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+    
+    GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::search_users(&rankings_ref, query.trim(), limit)
+    })
+}
+
+/// Get a user's percentile ranking
+#[ic_cdk::query]
+fn get_user_percentile(github_handle: String) -> Option<f64> {
+    if github_handle.trim().is_empty() {
+        return None;
+    }
+    
+    GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::get_user_percentile(github_handle.trim(), &rankings_ref)
+    })
+}
+
+/// Check if a user exists in rankings (for duplicate prevention)
+#[ic_cdk::query]
+fn user_exists_in_rankings(github_handle: String) -> bool {
+    if github_handle.trim().is_empty() {
+        return false;
+    }
+    
+    GITHUB_RANKINGS.with(|rankings| {
+        let rankings_ref = rankings.borrow();
+        GitHubRanking::user_exists(github_handle.trim(), &rankings_ref)
+    })
+}
+
+/// Get total number of ranked users
+#[ic_cdk::query]
+fn get_total_ranked_users() -> u64 {
+    GITHUB_RANKINGS.with(|rankings| {
+        rankings.borrow().len() as u64
+    })
 }
 
 ic_cdk::export_candid!();

@@ -21,7 +21,9 @@ import {
 } from "lucide-react";
 import { scoreGitHub, scoreGitHubPublic, type GitHubScoreResult } from "@/services/githubScorerService";
 import { githubOAuthAuthorize, githubHasToken, githubGetUsername } from "@/services/githubOAuthService";
+import { userExistsInRankings } from "@/services/githubRankingService";
 import { usePaymentFlow } from "@/hooks/usePaymentFlow";
+import GitHubLeaderboard from "@/components/GitHubLeaderboard";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
 
@@ -38,6 +40,7 @@ export default function GitHubScorerAgent() {
   const [fetchingUsername, setFetchingUsername] = useState(false);
   const [scoringMode, setScoringMode] = useState<"connected" | "manual">("manual");
   const [mockPaymentEnabled, setMockPaymentEnabled] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
   const {
     state,
@@ -138,6 +141,27 @@ export default function GitHubScorerAgent() {
         setError("Invalid GitHub handle format. Please enter a valid username.");
         return;
       }
+    }
+
+    // Check for duplicates before proceeding
+    try {
+      let handleToCheck = "";
+      if (usingConnectedAccount) {
+        // Get the connected user's handle
+        handleToCheck = await githubGetUsername();
+      } else {
+        handleToCheck = githubHandle.trim().replace(/^@/, "");
+      }
+
+      const exists = await userExistsInRankings(handleToCheck);
+      if (exists) {
+        setDuplicateWarning(`User @${handleToCheck} has already been ranked. The system will return existing results.`);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch (err) {
+      // Continue with scoring if duplicate check fails
+      setDuplicateWarning(null);
     }
 
     setError(null);
@@ -398,6 +422,13 @@ export default function GitHubScorerAgent() {
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
                 <AlertCircle className="h-4 w-4 text-red-300" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {duplicateWarning && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+                <AlertCircle className="h-4 w-4 text-yellow-300" />
+                <span>{duplicateWarning}</span>
               </div>
             )}
 
@@ -736,6 +767,11 @@ export default function GitHubScorerAgent() {
             </div> */}
           </aside>
         </main>
+
+        {/* Leaderboard Section */}
+        <div className="mt-12">
+          <GitHubLeaderboard limit={20} showSearch={true} showStats={true} />
+        </div>
       </div>
     </div>
   );
