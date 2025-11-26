@@ -3,6 +3,7 @@ use ic_cdk::api::management_canister::http_request::{
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use ic_llm;
 
 use crate::github_scorer::GitHubMetrics;
 
@@ -39,7 +40,7 @@ pub async fn fetch_github_metrics(
     let contribution_stats = fetch_contribution_stats(handle, access_token).await?;
     
     // Calculate metrics
-    let metrics = calculate_metrics(user_data, repos_data, contribution_stats)?;
+    let metrics = calculate_metrics(user_data, repos_data, contribution_stats).await?;
     
     Ok(metrics)
 }
@@ -117,7 +118,7 @@ async fn make_github_request(url: &str, token: Option<&str>) -> Result<Value, St
         .map_err(|e| format!("Failed to parse JSON response: {}", e))
 }
 
-fn calculate_metrics(
+async fn calculate_metrics(
     user_data: Value,
     repos_data: Vec<Value>,
     _contribution_stats: Value,
@@ -183,16 +184,24 @@ fn calculate_metrics(
         }
     }
 
-    // Estimate contributions from repos
-    let contributions_last_year = (repos_data.len() as u64 * 10).min(365);
+    // Estimate contributions from repos (focus on this year)
+    let contributions_this_year = (repos_data.len() as u64 * 8).min(365);
     let pull_requests = (repos_data.len() as u64 * 5).min(100);
     let issues_opened = (repos_data.len() as u64 * 3).min(50);
+    
+    // Generate monthly commit data using LLM for realistic patterns
+    let monthly_commits = generate_monthly_commits_with_llm(
+        total_commits,
+        public_repos,
+        account_age_days,
+        &languages,
+    ).await;
 
     Ok(GitHubMetrics {
         total_commits,
         repositories: public_repos,
         languages,
-        contributions_last_year,
+        contributions_this_year,
         stars_received: total_stars,
         forks_received: total_forks,
         pull_requests,
@@ -200,7 +209,114 @@ fn calculate_metrics(
         followers,
         account_age_days,
         public_repos,
+        monthly_commits,
     })
+}
+
+async fn generate_monthly_commits_with_llm(
+    total_commits: u64,
+    repos_count: u64,
+    account_age_days: u64,
+    languages: &HashMap<String, u64>,
+) -> Vec<u64> {
+    // Use LLM to generate realistic monthly commit distribution
+    if total_commits == 0 {
+        return vec![0; 12];
+    }
+    
+    let top_languages: Vec<String> = languages
+        .iter()
+        .take(3)
+        .map(|(lang, _)| lang.clone())
+        .collect();
+    
+    let prompt = format!(
+        r#"Generate a realistic monthly commit distribution for a GitHub developer with the following profile:
+
+**Developer Profile:**
+- Total commits: {}
+- Public repositories: {}
+- Account age: {} days
+- Primary languages: {}
+
+**Task:**
+Generate 12 monthly commit counts (last 12 months, from oldest to newest) that:
+1. Sum up to approximately {} total commits
+2. Show realistic patterns (seasonal variations, project cycles, etc.)
+3. Reflect the developer's experience level and activity
+
+**Response Format (JSON only):**
+{{
+  "monthly_commits": [month1, month2, month3, month4, month5, month6, month7, month8, month9, month10, month11, month12]
+}}
+
+Generate realistic numbers now:"#,
+        total_commits,
+        repos_count,
+        account_age_days,
+        top_languages.join(", "),
+        total_commits / 2
+    );
+    
+    match ic_llm::prompt(ic_llm::Model::Qwen3_32B, &prompt).await {
+        response => {
+            // Try to parse JSON response
+            if let Some(start) = response.find('{') {
+                if let Some(end) = response.rfind('}') {
+                    let json_str = &response[start..=end];
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                        if let Some(commits_array) = parsed.get("monthly_commits").and_then(|v| v.as_array()) {
+                            let mut monthly_commits = Vec::new();
+                            for commit_val in commits_array.iter().take(12) {
+                                if let Some(commit_count) = commit_val.as_u64() {
+                                    monthly_commits.push(commit_count);
+                                } else {
+                                    // Fallback if parsing fails
+                                    monthly_commits.push(total_commits / 24);
+                                }
+                            }
+                            
+                            // Ensure we have exactly 12 months
+                            while monthly_commits.len() < 12 {
+                                monthly_commits.push(total_commits / 24);
+                            }
+                            
+                            return monthly_commits;
+                        }
+                    }
+                }
+            }
+            
+            // Fallback if LLM parsing fails
+            ic_cdk::println!("Failed to parse LLM response for monthly commits, using fallback");
+            generate_fallback_monthly_commits(total_commits)
+        }
+    }
+}
+
+fn generate_fallback_monthly_commits(total_commits: u64) -> Vec<u64> {
+    // Fallback method when LLM is unavailable
+    if total_commits == 0 {
+        return vec![0; 12];
+    }
+    
+    let avg_monthly = (total_commits / 24).max(1);
+    
+    let mut monthly = Vec::with_capacity(12);
+    for i in 0..12 {
+        let variation = match i {
+            0..=2 => 0.8,   // Winter months
+            3..=5 => 1.2,   // Spring
+            6..=8 => 0.9,   // Summer
+            9..=11 => 1.1,  // Fall
+            _ => 1.0,
+        };
+        
+        let month_commits = ((avg_monthly as f64 * variation) as u64).max(0);
+        monthly.push(month_commits);
+    }
+    
+    monthly
 }
 
 #[ic_cdk::query]

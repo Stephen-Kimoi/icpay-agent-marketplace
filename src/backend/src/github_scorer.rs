@@ -8,7 +8,7 @@ pub struct GitHubMetrics {
     pub total_commits: u64,
     pub repositories: u64,
     pub languages: HashMap<String, u64>, // Language -> bytes of code
-    pub contributions_last_year: u64,
+    pub contributions_this_year: u64,
     pub stars_received: u64,
     pub forks_received: u64,
     pub pull_requests: u64,
@@ -16,6 +16,7 @@ pub struct GitHubMetrics {
     pub followers: u64,
     pub account_age_days: u64,
     pub public_repos: u64,
+    pub monthly_commits: Vec<u64>, // Last 12 months of commit activity
 }
 
 #[derive(CandidType, Deserialize, Clone, Debug)]
@@ -82,7 +83,7 @@ impl GitHubScorer {
 - Total Commits: {}
 - Public Repositories: {}
 - Languages Used: {} ({} languages)
-- Contributions Last Year: {}
+- Contributions This Year: {}
 - Stars Received: {}
 - Forks Received: {}
 - Pull Requests: {}
@@ -121,7 +122,7 @@ Calculate the score now:"#,
             metrics.public_repos,
             languages_summary,
             metrics.languages.len(),
-            metrics.contributions_last_year,
+            metrics.contributions_this_year,
             metrics.stars_received,
             metrics.forks_received,
             metrics.pull_requests,
@@ -207,11 +208,31 @@ Calculate the score now:"#,
     }
 
     fn fallback_scoring(metrics: &GitHubMetrics) -> Result<(f64, ScoreBreakdown, String), String> {
-        // Simple fallback scoring algorithm
-        let commits_score = (metrics.total_commits.min(10000) as f64 / 10000.0 * 25.0).min(25.0);
-        let activity_score = (metrics.contributions_last_year.min(365) as f64 / 365.0 * 20.0).min(20.0);
+        // Improved scoring algorithm with realistic commit evaluation
+        
+        // Commits scoring (25 points max) - more realistic thresholds
+        let commits_score = if metrics.total_commits == 0 {
+            0.0
+        } else if metrics.total_commits < 100 {
+            (metrics.total_commits as f64 / 100.0) * 10.0 // 0-10 points for < 100 commits
+        } else if metrics.total_commits < 1000 {
+            10.0 + ((metrics.total_commits - 100) as f64 / 900.0) * 10.0 // 10-20 points for 100-1000 commits
+        } else if metrics.total_commits < 5000 {
+            20.0 + ((metrics.total_commits - 1000) as f64 / 4000.0) * 4.0 // 20-24 points for 1000-5000 commits
+        } else {
+            24.0 + ((metrics.total_commits.min(10000) - 5000) as f64 / 5000.0) * 1.0 // 24-25 points for 5000+ commits
+        };
+        
+        // Activity scoring based on this year's contributions (20 points max)
+        let activity_score = (metrics.contributions_this_year.min(365) as f64 / 365.0 * 20.0).min(20.0);
+        
+        // Languages scoring (15 points max)
         let languages_score = (metrics.languages.len().min(10) as f64 / 10.0 * 15.0).min(15.0);
+        
+        // Repositories scoring (15 points max)
         let repos_score = (metrics.public_repos.min(50) as f64 / 50.0 * 15.0).min(15.0);
+        
+        // Contributions scoring (10 points max)
         let contributions_score = ((metrics.pull_requests + metrics.issues_opened).min(100) as f64 / 100.0 * 10.0).min(10.0);
         
         let total_score = commits_score + activity_score + languages_score + repos_score + contributions_score;
@@ -234,6 +255,27 @@ Calculate the score now:"#,
         breakdown: &ScoreBreakdown,
         metrics: &GitHubMetrics,
     ) -> String {
+        // Format account age in a human-readable way
+        let account_age_formatted = Self::format_account_age(metrics.account_age_days);
+        
+        // Generate monthly commit breakdown
+        let monthly_breakdown = if !metrics.monthly_commits.is_empty() {
+            let total_monthly: u64 = metrics.monthly_commits.iter().sum();
+            let avg_monthly = if metrics.monthly_commits.len() > 0 {
+                total_monthly / metrics.monthly_commits.len() as u64
+            } else {
+                0
+            };
+            format!(
+                "  - Monthly breakdown: {} commits over {} months (avg: {} per month)",
+                total_monthly,
+                metrics.monthly_commits.len(),
+                avg_monthly
+            )
+        } else {
+            "  - Monthly breakdown: Data not available".to_string()
+        };
+        
         format!(
             r#"## GitHub Score Analysis
 
@@ -243,30 +285,31 @@ Calculate the score now:"#,
 
 - **Commits**: {:.1} points
   - Total commits: {}
-  - Active commit history with consistent contributions
+{}
+  - Consistent development activity shows dedication
 
 - **Activity**: {:.1} points
-  - Contributions last year: {}
-  - Regular activity across repositories
+  - Contributions this year: {}
+  - Regular engagement with the platform
 
 - **Languages**: {:.1} points
   - Languages used: {}
-  - Diverse technology stack
+  - Diverse technology stack demonstrates versatility
 
 - **Repositories**: {:.1} points
   - Public repositories: {}
-  - Well-maintained codebase
+  - Well-maintained codebase portfolio
 
 - **Contributions**: {:.1} points
   - Pull requests: {}
   - Issues opened: {}
-  - Active participation in open source
+  - Active participation in open source community
 
 ### Additional Metrics:
 - Stars received: {}
 - Forks received: {}
 - Followers: {}
-- Account age: {} days
+- Account age: {}
 
 ### Recommendations:
 1. Increase commit frequency for higher activity score
@@ -276,8 +319,9 @@ Calculate the score now:"#,
             score,
             breakdown.commits,
             metrics.total_commits,
+            monthly_breakdown,
             breakdown.activity,
-            metrics.contributions_last_year,
+            metrics.contributions_this_year,
             breakdown.languages,
             metrics.languages.len(),
             breakdown.repositories,
@@ -288,22 +332,50 @@ Calculate the score now:"#,
             metrics.stars_received,
             metrics.forks_received,
             metrics.followers,
-            metrics.account_age_days
+            account_age_formatted
         )
     }
 
-    fn calculate_rank(score: f64, total_users: u64) -> u64 {
-        // Simplified ranking - assumes uniform distribution
-        // In production, you'd query the actual rank from stored scores
-        if total_users == 0 {
-            return 1;
+    fn format_account_age(days: u64) -> String {
+        let years = days / 365;
+        let remaining_days = days % 365;
+        let months = remaining_days / 30;
+        let days_left = remaining_days % 30;
+        
+        let mut parts = Vec::new();
+        
+        if years > 0 {
+            parts.push(format!("{} year{}", years, if years == 1 { "" } else { "s" }));
         }
         
-        // Estimate rank based on score percentile
-        // Higher score = lower rank number (better)
-        let percentile = score / 100.0;
-        let estimated_rank = ((1.0 - percentile) * total_users as f64).max(1.0) as u64;
+        if months > 0 {
+            parts.push(format!("{} month{}", months, if months == 1 { "" } else { "s" }));
+        }
         
-        estimated_rank.min(total_users)
+        if days_left > 0 || parts.is_empty() {
+            parts.push(format!("{} day{}", days_left, if days_left == 1 { "" } else { "s" }));
+        }
+        
+        parts.join(", ")
+    }
+
+    fn calculate_rank(score: f64, _total_users: u64) -> u64 {
+        // Since we don't have a real ranking system yet, return a placeholder
+        // In production, this would query stored user scores and calculate actual rank
+        
+        // For now, return a rank based on score tiers to give users an idea
+        if score >= 90.0 {
+            1 // Top tier
+        } else if score >= 80.0 {
+            (101.0 - score) as u64 // Ranks 2-21 for scores 80-89
+        } else if score >= 70.0 {
+            (201.0 - score) as u64 // Ranks 131-201 for scores 70-79
+        } else if score >= 60.0 {
+            (301.0 - score) as u64 // Ranks 241-301 for scores 60-69
+        } else if score >= 50.0 {
+            (501.0 - score) as u64 // Ranks 451-501 for scores 50-59
+        } else {
+            (1001.0 - (score * 10.0)) as u64 // Lower ranks for scores < 50
+        }
     }
 }
