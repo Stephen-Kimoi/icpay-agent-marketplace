@@ -61,8 +61,8 @@ export default function GitHubScorerAgent() {
     skipContribution,
   } = usePaymentFlow<ScoringResult>({
     mockPayment: mockPaymentEnabled,
-    mockPrice: 0.05,
-    mockCurrency: "ICP",
+    mockPrice: 0.60,
+    mockCurrency: "USD",
   });
 
   const scoreResult = result?.scoreResult ?? null;
@@ -490,19 +490,6 @@ export default function GitHubScorerAgent() {
                         <span className="font-semibold text-purple-200"> You can also skip and get your results completely free!</span>
                       </p>
 
-                      {/* Price Display */}
-                      {quote && (
-                        <div className="mb-6 flex items-center justify-center">
-                          <div className="rounded-2xl border border-purple-400/30 bg-purple-500/10 px-6 py-4 text-center backdrop-blur-sm">
-                            <p className="text-xs font-medium uppercase tracking-wider text-purple-300">
-                              Suggested Amount
-                            </p>
-                            <p className="text-3xl font-bold text-white">
-                              {quote.price} <span className="text-lg text-purple-200">{quote.currency}</span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Action Buttons */}
                       <div className="flex flex-col gap-3 sm:flex-row">
@@ -516,7 +503,7 @@ export default function GitHubScorerAgent() {
                             className="flex-1 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-700 px-6 py-4 text-base font-semibold shadow-[0_20px_40px_-12px_rgba(168,85,247,0.4)] transition-all duration-300 hover:scale-[1.02] hover:from-purple-500 hover:via-pink-500 hover:to-purple-600 hover:shadow-[0_25px_50px_-12px_rgba(168,85,247,0.6)]"
                           >
                             <span className="flex items-center gap-2">
-                              ✨ Make a Contribution
+                              ✨ Pay
                             </span>
                           </Button>
                         ) : icpayConfig ? (
