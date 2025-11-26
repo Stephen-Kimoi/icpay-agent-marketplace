@@ -84,7 +84,19 @@ export function usePaymentFlow<T>(
 
         setState("quoted");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to get quote. Please try again.");
+        let errorMessage = "Failed to get quote. Please try again.";
+        if (err instanceof Error) {
+          errorMessage = err.message;
+          
+          // Provide more helpful error messages for common issues
+          if (err.message.includes("consensus") || err.message.includes("SysTransient")) {
+            errorMessage = "Service is temporarily unavailable due to network issues. Please wait a moment and try again.";
+          } else if (err.message.includes("GitHub API")) {
+            errorMessage = "Unable to access GitHub at the moment. Please try again in a few seconds.";
+          }
+        }
+        
+        setError(errorMessage);
         setState("error");
       } finally {
         setLoading(false);
@@ -124,11 +136,20 @@ export function usePaymentFlow<T>(
         setState("completed");
       } catch (err) {
         console.error("Error completing payment or executing job:", err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to complete payment or execute job. Please try again."
-        );
+        
+        let errorMessage = "Failed to complete payment or execute job. Please try again.";
+        if (err instanceof Error) {
+          errorMessage = err.message;
+          
+          // Provide more helpful error messages for common issues
+          if (err.message.includes("consensus") || err.message.includes("SysTransient")) {
+            errorMessage = "GitHub API is temporarily unavailable due to network issues. Please wait a moment and try again.";
+          } else if (err.message.includes("GitHub API")) {
+            errorMessage = "Unable to fetch GitHub data at the moment. Please try again in a few seconds.";
+          }
+        }
+        
+        setError(errorMessage);
         setState("error");
       }
     },
@@ -256,4 +277,3 @@ export function usePaymentFlow<T>(
     simulatePayment: mockPayment ? simulatePayment : undefined,
   };
 }
-
