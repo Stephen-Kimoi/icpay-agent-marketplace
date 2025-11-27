@@ -341,21 +341,19 @@ Calculate the score now:"#,
 
     fn calculate_rank(score: f64, _total_users: u64) -> u64 {
         // Since we don't have a real ranking system yet, return a placeholder
-        // In production, this would query stored user scores and calculate actual rank
-        
-        // For now, return a rank based on score tiers to give users an idea
+
         if score >= 90.0 {
             1 // Top tier
         } else if score >= 80.0 {
-            ((101.0 - score).round() as u64).max(2) // Ranks 2-21 for scores 80-89
+            ((101.0 - score).round() as u64).max(2) 
         } else if score >= 70.0 {
-            ((201.0 - score).round() as u64).max(131) // Ranks 131-201 for scores 70-79
+            ((201.0 - score).round() as u64).max(131) 
         } else if score >= 60.0 {
-            ((301.0 - score).round() as u64).max(241) // Ranks 241-301 for scores 60-69
+            ((301.0 - score).round() as u64).max(241) 
         } else if score >= 50.0 {
-            ((501.0 - score).round() as u64).max(451) // Ranks 451-501 for scores 50-59
+            ((501.0 - score).round() as u64).max(451) 
         } else {
-            ((1001.0 - (score * 10.0)).round() as u64).max(501) // Lower ranks for scores < 50
+            ((1001.0 - (score * 10.0)).round() as u64).max(501) 
         }
     }
 }
