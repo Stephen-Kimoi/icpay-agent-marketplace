@@ -2,6 +2,7 @@ import { Quote } from "@/types/quote";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpaySuccess } from "@ic-pay/icpay-widget/react";
 import { PaymentResult } from "@/types/payment";
+import { ENV } from "@/config";
 
 /**
  * ICPay service for handling payment-related operations
@@ -10,7 +11,7 @@ import { PaymentResult } from "@/types/payment";
 export interface ICPayConfig {
   publishableKey: string;
   amountUsd?: number;
-  priceUsd?: number; // Alternative to amountUsd for some components
+  priceUsd?: number;
   // Token filtering options to resolve Plug wallet issues
   chainTypes?: Array<'ic' | 'evm'>;
   chainShortcodes?: string[];
@@ -169,23 +170,29 @@ export const createICPayConfig = async (
   if (!publishableKey) return null;
 
   // Convert quote price to USD if it's in ICP
-  // ICPay's priceUsd field expects USD, and it will convert back to the selected currency
   const priceUsd = quote.currency === "ICP" 
     ? await convertICPtoUSD(quote.price)
-    : quote.price; // If already in USD or other currency, use as-is
+    : quote.price;
 
   console.log(`Quote: ${quote.price} ${quote.currency} -> ${priceUsd} USD`);
-  console.log("Creating ICPay config... done");
+
+  const metadata: Record<string, number | string> = {
+    request: userRequest,
+  };
+    
+  const jobId = Number(quote.job_id);
+  if (!isNaN(jobId) && jobId > 0) {
+    metadata.job_id = jobId;
+  }
   
-  // Explicitly define tokens for IC chain to resolve Plug wallet "no balances" issue
-  // The new ICPay widget requires explicit token shortcodes to detect balances
+  const isLocalhost = ENV.host.includes('localhost');
+  
   const config: ICPayConfig = {
     publishableKey,
     priceUsd,
-    // Explicitly specify IC chain and supported tokens
-    chainTypes: ['ic'], // Only show IC tokens/wallets (Plug, Oisy, II, NFID)
-    tokenShortcodes: ['ic_icp', 'ic_ckusdc'], // Explicitly define tokens to check balances for
-    // Progress bar configuration
+    ...(isLocalhost && { icHost: ENV.host }),
+    chainTypes: ['ic'],
+    tokenShortcodes: ['ic_icp', 'ic_ckusdc'],
     progressBar: {
       enabled: true,
     },
@@ -205,16 +212,12 @@ export const createICPayConfig = async (
     },
     // Open Oisy in new tab to avoid popup issues
     openOisyInNewTab: true,
-    // Debug and timeout settings
-    debug: true, // Keep debug for troubleshooting
-    timeout: 120000, // 2 minute timeout
-    metadata: {
-      job_id: Number(quote.job_id),
-      request: userRequest,
-    },
+    debug: true,
+    timeout: 120000,
+    metadata,
   };
 
-  console.log("ICPay config with explicit tokens:", JSON.stringify(config, null, 2));
+  console.log("Creating ICPay config... done");
   return config;
 };
 
