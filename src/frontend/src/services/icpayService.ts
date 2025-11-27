@@ -5,19 +5,63 @@ import { PaymentResult } from "@/types/payment";
 
 /**
  * ICPay service for handling payment-related operations
-*/
+ * Updated to match the new ICPay widget configuration format
+ */
 export interface ICPayConfig {
   publishableKey: string;
-  amountUsd: number;
-  defaultSymbol: string;
-  showLedgerDropdown: 'none' | 'buttons' | 'dropdown';
-  progressBar: {
-    enabled: boolean;
-    mode: 'modal' | 'horizontal' | 'vertical' | 'inline';
+  amountUsd?: number;
+  priceUsd?: number; // Alternative to amountUsd for some components
+  // Token filtering options to resolve Plug wallet issues
+  chainTypes?: Array<'ic' | 'evm'>;
+  chainShortcodes?: string[];
+  tokenShortcodes?: string[];
+  // Progress bar configuration
+  progressBar?: {
+    enabled?: boolean;
   };
+  // Theme and UI options
+  theme?: {
+    primaryColor?: string;
+    secondaryColor?: string;
+    accentColor?: string;
+    textColor?: string;
+    mutedTextColor?: string;
+    surfaceColor?: string;
+    surfaceAltColor?: string;
+    borderColor?: string;
+    fontFamily?: string;
+  };
+  // Wallet and connection options
+  plugNPlay?: {
+    enabled?: boolean;
+    theme?: {
+      modalBackground?: string;
+      modalBorderRadius?: string;
+      buttonBackground?: string;
+      buttonHoverBackground?: string;
+      textColor?: string;
+      primaryColor?: string;
+    };
+    adapters?: Record<string, {
+      enabled?: boolean;
+      config?: Record<string, any>;
+    }>;
+  };
+  // Advanced options
+  useOwnWallet?: boolean;
+  connectedWallet?: { owner: string };
+  actorProvider?: any;
+  derivationOrigin?: string;
+  openOisyInNewTab?: boolean;
+  disablePaymentButton?: boolean;
+  disableAfterSuccess?: boolean;
   metadata?: Record<string, number | string>;
   debug?: boolean;
-  timeout?: number; // Timeout in milliseconds
+  timeout?: number;
+  // SDK passthrough options
+  apiUrl?: string;
+  icHost?: string;
+  evmProvider?: any;
 }
 
 /**
@@ -125,27 +169,53 @@ export const createICPayConfig = async (
   if (!publishableKey) return null;
 
   // Convert quote price to USD if it's in ICP
-  // ICPay's amountUsd field expects USD, and it will convert back to the selected currency
-  const amountUsd = quote.currency === "ICP" 
+  // ICPay's priceUsd field expects USD, and it will convert back to the selected currency
+  const priceUsd = quote.currency === "ICP" 
     ? await convertICPtoUSD(quote.price)
     : quote.price; // If already in USD or other currency, use as-is
 
-  console.log(`Quote: ${quote.price} ${quote.currency} -> ${amountUsd} USD`);
+  console.log(`Quote: ${quote.price} ${quote.currency} -> ${priceUsd} USD`);
   console.log("Creating ICPay config... done");
   
-  return {
+  // Explicitly define tokens for IC chain to resolve Plug wallet "no balances" issue
+  // The new ICPay widget requires explicit token shortcodes to detect balances
+  const config: ICPayConfig = {
     publishableKey,
-    amountUsd,
-    defaultSymbol: quote.currency === "ICP" ? "ICP" : "ICP",
-    showLedgerDropdown: 'dropdown',
-    progressBar: { enabled: true, mode: 'inline' },
-    debug: true, // Enable debug mode for troubleshooting
-    timeout: 120000, // 2 minute timeout to prevent hanging
+    priceUsd,
+    // Explicitly specify IC chain and supported tokens
+    chainTypes: ['ic'], // Only show IC tokens/wallets (Plug, Oisy, II, NFID)
+    tokenShortcodes: ['ic_icp', 'ic_ckusdc'], // Explicitly define tokens to check balances for
+    // Progress bar configuration
+    progressBar: {
+      enabled: true,
+    },
+    // Theme configuration
+    theme: {
+      primaryColor: '#0ea5e9',
+    },
+    // Wallet configuration - ensure Plug is enabled
+    plugNPlay: {
+      enabled: true,
+      adapters: {
+        plug: { enabled: true },
+        oisy: { enabled: true },
+        ii: { enabled: true },
+        nfid: { enabled: true },
+      },
+    },
+    // Open Oisy in new tab to avoid popup issues
+    openOisyInNewTab: true,
+    // Debug and timeout settings
+    debug: true, // Keep debug for troubleshooting
+    timeout: 120000, // 2 minute timeout
     metadata: {
       job_id: Number(quote.job_id),
       request: userRequest,
     },
   };
+
+  console.log("ICPay config with explicit tokens:", JSON.stringify(config, null, 2));
+  return config;
 };
 
 /**
