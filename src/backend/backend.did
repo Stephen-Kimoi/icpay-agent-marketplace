@@ -1,9 +1,47 @@
+type GitHubOAuthConfig = record {
+  redirect_uri : text;
+  client_id : text;
+  client_secret : text;
+};
+type GitHubRankingStats = record {
+  average_score : float64;
+  lowest_score : float64;
+  total_users : nat64;
+  highest_score : float64;
+};
+type GitHubScoreResult = record {
+  total_users : nat64;
+  breakdown : ScoreBreakdown;
+  rank : nat64;
+  score : float64;
+  details : text;
+};
+type HttpHeader = record { value : text; name : text };
+type HttpResponse = record {
+  status : nat;
+  body : blob;
+  headers : vec HttpHeader;
+};
 type JobRequest = record {
   request : text;
   created_at : nat64;
   price : float64;
 };
 type JobResult = record { output : text; job_id : text; completed_at : nat64 };
+type LeaderboardEntry = record {
+  rank : nat64;
+  score : float64;
+  scored_at : nat64;
+  github_handle : text;
+};
+type OAuthAuthorizationUrl = record { url : text; state : text };
+type OAuthToken = record {
+  user_principal : text;
+  created_at : nat64;
+  scope : text;
+  access_token : text;
+  token_type : text;
+};
 type PaymentInfo = record {
   transaction_id : opt text;
   status : PaymentStatus;
@@ -18,11 +56,23 @@ type PaymentStatus = variant { Failed; Completed; Pending };
 type Quote = record { job_id : text; currency : text; price : float64 };
 type Result = variant { Ok : text; Err : text };
 type Result_1 = variant { Ok : PaymentInfo; Err : text };
+type Result_10 = variant { Ok : GitHubScoreResult; Err : text };
 type Result_2 = variant { Ok; Err : text };
 type Result_3 = variant { Ok : blob; Err : text };
 type Result_4 = variant { Ok : JobResult; Err : text };
 type Result_5 = variant { Ok : Quote; Err : text };
-type Result_6 = variant { Ok : PaymentRequest; Err : text };
+type Result_6 = variant { Ok : OAuthToken; Err : text };
+type Result_7 = variant { Ok : OAuthAuthorizationUrl; Err : text };
+type Result_8 = variant { Ok : GitHubOAuthConfig; Err : text };
+type Result_9 = variant { Ok : PaymentRequest; Err : text };
+type ScoreBreakdown = record {
+  repositories : float64;
+  contributions : float64;
+  languages : float64;
+  commits : float64;
+  activity : float64;
+};
+type TransformArgs = record { context : blob; response : HttpResponse };
 service : {
   // Analyze CSV data with the provided options.
   analyze_csv : (blob, text, opt text, opt text, bool) -> (Result);
@@ -34,14 +84,58 @@ service : {
   compress_pdf : (blob, nat8) -> (Result_3);
   // Execute the job after payment is confirmed
   execute_job : (text) -> (Result_4);
+  // Get the GitHub leaderboard (top N users)
+  get_github_leaderboard : (opt nat64) -> (vec LeaderboardEntry) query;
+  // Get GitHub ranking statistics
+  get_github_ranking_stats : () -> (GitHubRankingStats) query;
   // Get job result
   get_job_result : (text) -> (Result_4) query;
   // Get a quote for processing a request
   get_quote : (text) -> (Result_5);
+  // Get total number of ranked users
+  get_total_ranked_users : () -> (nat64) query;
+  // Get a user's percentile ranking
+  get_user_percentile : (text) -> (opt float64) query;
+  // Get stored GitHub OAuth token for the caller
+  github_get_token : () -> (Result_6) query;
+  // Get authenticated user's GitHub username
+  github_get_username : () -> (Result);
+  // Check if caller has a valid GitHub token
+  github_has_token : () -> (bool) query;
+  // Generate GitHub OAuth authorization URL
+  github_oauth_authorize : () -> (Result_7);
+  // Exchange OAuth authorization code for access token
+  github_oauth_callback : (text, text) -> (Result_6);
+  // Get GitHub OAuth configuration (admin only)
+  github_oauth_get_config : () -> (Result_8) query;
+  // Set GitHub OAuth configuration (admin only)
+  github_oauth_set_config : (GitHubOAuthConfig) -> (Result);
+  // Revoke/remove GitHub OAuth token
+  github_revoke_token : () -> (Result_2);
   // Initiate payment for a job
-  initiate_payment : (text) -> (Result_6);
+  initiate_payment : (text) -> (Result_9);
   // Get all jobs (for debugging/admin)
   list_jobs : () -> (vec record { text; JobRequest }) query;
+  // Score a GitHub profile
+  // If handle is empty, uses the authenticated user's GitHub username
+  score_github : (text) -> (Result_10);
+  // Score a public GitHub profile without requiring OAuth
+  score_github_public : (text) -> (Result_10);
+  // Search for users in the rankings
+  search_github_rankings : (text, opt nat64) -> (vec LeaderboardEntry) query;
   // Summarize text with the provided tone and options.
   summarize_text : (text, text, bool) -> (Result);
+  transform_github_api : (TransformArgs) -> (HttpResponse) query;
+  // Transform function for GitHub API HTTP responses (required for consensus)
+  // This must be exported so IC can call it during HTTP outcall processing
+  transform_github_api_export : (TransformArgs) -> (HttpResponse) query;
+  // Transform function for HTTP responses (required by IC)
+  // This function must be deterministic - it extracts only the response body
+  // and removes non-deterministic headers to ensure consensus across replicas
+  transform_github_oauth : (TransformArgs) -> (HttpResponse) query;
+  // Transform function for GitHub OAuth HTTP responses (required for consensus)
+  // This must be exported so IC can call it during HTTP outcall processing
+  transform_github_oauth_export : (TransformArgs) -> (HttpResponse) query;
+  // Check if a user exists in rankings (for duplicate prevention)
+  user_exists_in_rankings : (text) -> (bool) query;
 }

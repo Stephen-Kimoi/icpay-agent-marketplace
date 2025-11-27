@@ -2,20 +2,67 @@ import { Quote } from "@/types/quote";
 // @ts-ignore - ICPay widget types may not be fully resolved
 import { IcpaySuccess } from "@ic-pay/icpay-widget/react";
 import { PaymentResult } from "@/types/payment";
+import { ENV } from "@/config";
 
 /**
  * ICPay service for handling payment-related operations
-*/
+ * Updated to match the new ICPay widget configuration format
+ */
 export interface ICPayConfig {
   publishableKey: string;
-  amountUsd: number;
-  defaultSymbol: string;
-  showLedgerDropdown: 'none' | 'buttons' | 'dropdown';
-  progressBar: {
-    enabled: boolean;
-    mode: 'modal' | 'horizontal' | 'vertical' | 'inline';
+  amountUsd?: number;
+  priceUsd?: number;
+  // Token filtering options to resolve Plug wallet issues
+  chainTypes?: Array<'ic' | 'evm'>;
+  chainShortcodes?: string[];
+  tokenShortcodes?: string[];
+  // Progress bar configuration
+  progressBar?: {
+    enabled?: boolean;
   };
+  // Theme and UI options
+  theme?: {
+    primaryColor?: string;
+    secondaryColor?: string;
+    accentColor?: string;
+    textColor?: string;
+    mutedTextColor?: string;
+    surfaceColor?: string;
+    surfaceAltColor?: string;
+    borderColor?: string;
+    fontFamily?: string;
+  };
+  // Wallet and connection options
+  plugNPlay?: {
+    enabled?: boolean;
+    theme?: {
+      modalBackground?: string;
+      modalBorderRadius?: string;
+      buttonBackground?: string;
+      buttonHoverBackground?: string;
+      textColor?: string;
+      primaryColor?: string;
+    };
+    adapters?: Record<string, {
+      enabled?: boolean;
+      config?: Record<string, any>;
+    }>;
+  };
+  // Advanced options
+  useOwnWallet?: boolean;
+  connectedWallet?: { owner: string };
+  actorProvider?: any;
+  derivationOrigin?: string;
+  openOisyInNewTab?: boolean;
+  disablePaymentButton?: boolean;
+  disableAfterSuccess?: boolean;
   metadata?: Record<string, number | string>;
+  debug?: boolean;
+  timeout?: number;
+  // SDK passthrough options
+  apiUrl?: string;
+  icHost?: string;
+  evmProvider?: any;
 }
 
 /**
@@ -123,25 +170,55 @@ export const createICPayConfig = async (
   if (!publishableKey) return null;
 
   // Convert quote price to USD if it's in ICP
-  // ICPay's amountUsd field expects USD, and it will convert back to the selected currency
-  const amountUsd = quote.currency === "ICP" 
+  const priceUsd = quote.currency === "ICP" 
     ? await convertICPtoUSD(quote.price)
-    : quote.price; // If already in USD or other currency, use as-is
+    : quote.price;
 
-  console.log(`Quote: ${quote.price} ${quote.currency} -> ${amountUsd} USD`);
-  console.log("Creating ICPay config... done");
-  
-  return {
-    publishableKey,
-    amountUsd,
-    defaultSymbol: quote.currency === "ICP" ? "ICP" : "ICP",
-    showLedgerDropdown: 'dropdown',
-    progressBar: { enabled: true, mode: 'modal' },
-    metadata: {
-      job_id: Number(quote.job_id),
-      request: userRequest,
-    },
+  console.log(`Quote: ${quote.price} ${quote.currency} -> ${priceUsd} USD`);
+
+  const metadata: Record<string, number | string> = {
+    request: userRequest,
   };
+    
+  const jobId = Number(quote.job_id);
+  if (!isNaN(jobId) && jobId > 0) {
+    metadata.job_id = jobId;
+  }
+  
+  const isLocalhost = ENV.host.includes('localhost');
+  
+  const config: ICPayConfig = {
+    publishableKey,
+    priceUsd,
+    ...(isLocalhost && { icHost: ENV.host }),
+    chainTypes: ['ic'],
+    tokenShortcodes: ['ic_icp', 'ic_ckusdc'],
+    progressBar: {
+      enabled: true,
+    },
+    // Theme configuration
+    theme: {
+      primaryColor: '#0ea5e9',
+    },
+    // Wallet configuration - ensure Plug is enabled
+    plugNPlay: {
+      enabled: true,
+      adapters: {
+        plug: { enabled: true },
+        oisy: { enabled: true },
+        ii: { enabled: true },
+        nfid: { enabled: true },
+      },
+    },
+    // Open Oisy in new tab to avoid popup issues
+    openOisyInNewTab: true,
+    debug: true,
+    timeout: 120000,
+    metadata,
+  };
+
+  console.log("Creating ICPay config... done");
+  return config;
 };
 
 /**
@@ -171,6 +248,8 @@ export const handlePaymentSuccess = (detail: IcpaySuccess | any): PaymentResult 
  */
 export const handlePaymentError = (error: unknown): string => {
   console.error("Payment error:", error);
+  console.error("Payment error type:", typeof error);
+  console.error("Payment error stringified:", JSON.stringify(error, null, 2));
   
   let errorMessage = 'Payment failed. Please try again.';
   
@@ -182,8 +261,14 @@ export const handlePaymentError = (error: unknown): string => {
       errorMessage = 'ICPay authentication failed. Please check your publishable key (PUBLIC_KEY) in your environment variables.';
     } else if (msg.includes('CORS') || msg.includes('Failed to fetch')) {
       errorMessage = 'Network error. Please ensure your Internet Computer replica is running and accessible. If using a wallet, check that the IC replica endpoint is configured correctly.';
+    } else if (msg.includes('timeout') || msg.includes('Timeout')) {
+      errorMessage = 'Payment timed out. This can happen if the wallet takes too long to respond. Please try again.';
+    } else if (msg.includes('rejected') || msg.includes('cancelled') || msg.includes('denied')) {
+      errorMessage = 'Payment was cancelled or rejected by the wallet. Please try again if this was unintentional.';
+    } else if (msg.includes('insufficient') || msg.includes('balance')) {
+      errorMessage = 'Insufficient balance in your wallet. Please ensure you have enough funds and try again.';
     } else {
-      errorMessage = msg;
+      errorMessage = `Payment failed: ${msg}`;
     }
   }
   

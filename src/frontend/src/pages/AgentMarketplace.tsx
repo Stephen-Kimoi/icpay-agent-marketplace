@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FileText, FileSpreadsheet, Sparkles, Zap } from "lucide-react";
+import { FileText, FileSpreadsheet, Sparkles, Zap, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 
-type AgentCategory = "All" | "File Tools" | "Text Tools" | "Data Tools";
+type AgentCategory = "All" | "File Tools" | "Text Tools" | "Data Tools" | "Developer Tools";
 
 const agents = [
   {
@@ -32,9 +32,18 @@ const agents = [
     price: "From 0.07 ICP",
     isNew: true,
   },
+  {
+    id: "github-scorer",
+    name: "GitHub Scorer",
+    description: "Analyze your GitHub profile and get ranked against other developers.",
+    icon: Github,
+    category: "Developer Tools",
+    price: "From 0.06 ICP",
+    isNew: true,
+  },
 ];
 
-const categories: AgentCategory[] = ["All", "File Tools", "Text Tools", "Data Tools"];
+const categories: AgentCategory[] = ["All", "File Tools", "Text Tools", "Data Tools", "Developer Tools"];
 
 export default function AgentMarketplace() {
   const [searchTerm, setSearchTerm] = useState("");

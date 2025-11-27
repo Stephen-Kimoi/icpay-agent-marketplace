@@ -4,7 +4,13 @@
       "candid": "src/backend/backend.did",
       "package": "backend",
       "type": "rust", 
-      "gzip": true
+      "gzip": true,
+      "http_outcalls": {
+        "allowed_urls": [
+          "https://github.com",
+          "https://api.github.com"
+        ]
+      }
     },
     "frontend": {
       "dependencies": [

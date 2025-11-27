@@ -39,6 +39,7 @@ interface UsePaymentFlowReturn<T> {
   reset: () => void;
   setError: (message: string | null) => void;
   simulatePayment?: () => Promise<void>;
+  skipContribution: () => Promise<void>;
 }
 
 export function usePaymentFlow<T>(
@@ -84,7 +85,19 @@ export function usePaymentFlow<T>(
 
         setState("quoted");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to get quote. Please try again.");
+        let errorMessage = "Failed to get quote. Please try again.";
+        if (err instanceof Error) {
+          errorMessage = err.message;
+          
+          // Provide more helpful error messages for common issues
+          if (err.message.includes("consensus") || err.message.includes("SysTransient")) {
+            errorMessage = "Service is temporarily unavailable due to network issues. Please wait a moment and try again.";
+          } else if (err.message.includes("GitHub API")) {
+            errorMessage = "Unable to access GitHub at the moment. Please try again in a few seconds.";
+          }
+        }
+        
+        setError(errorMessage);
         setState("error");
       } finally {
         setLoading(false);
@@ -124,11 +137,20 @@ export function usePaymentFlow<T>(
         setState("completed");
       } catch (err) {
         console.error("Error completing payment or executing job:", err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to complete payment or execute job. Please try again."
-        );
+        
+        let errorMessage = "Failed to complete payment or execute job. Please try again.";
+        if (err instanceof Error) {
+          errorMessage = err.message;
+          
+          // Provide more helpful error messages for common issues
+          if (err.message.includes("consensus") || err.message.includes("SysTransient")) {
+            errorMessage = "GitHub API is temporarily unavailable due to network issues. Please wait a moment and try again.";
+          } else if (err.message.includes("GitHub API")) {
+            errorMessage = "Unable to fetch GitHub data at the moment. Please try again in a few seconds.";
+          }
+        }
+        
+        setError(errorMessage);
         setState("error");
       }
     },
@@ -218,6 +240,47 @@ export function usePaymentFlow<T>(
     executeRef.current = null;
   }, []);
 
+  const skipContribution = useCallback(async () => {
+    if (!quote) {
+      setError("No quote available to skip contribution for.");
+      return;
+    }
+
+    const execute = executeRef.current;
+    if (!execute) {
+      setError("Execution handler not configured.");
+      return;
+    }
+
+    try {
+      setState("executing");
+      setError(null);
+
+      // Execute directly without payment
+      const executionResult = await execute(quote.job_id, quote);
+      setResult(executionResult);
+
+      setState("completed");
+    } catch (err) {
+      console.error("Error executing job without contribution:", err);
+      
+      let errorMessage = "Failed to execute job. Please try again.";
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        
+        // Provide more helpful error messages for common issues
+        if (err.message.includes("consensus") || err.message.includes("SysTransient")) {
+          errorMessage = "Service is temporarily unavailable due to network issues. Please wait a moment and try again.";
+        } else if (err.message.includes("GitHub API")) {
+          errorMessage = "Unable to access GitHub at the moment. Please try again in a few seconds.";
+        }
+      }
+      
+      setError(errorMessage);
+      setState("error");
+    }
+  }, [quote]);
+
   // Fetch ICPay config when quote or request description changes
   useEffect(() => {
     const fetchConfig = async () => {
@@ -253,7 +316,7 @@ export function usePaymentFlow<T>(
     handlePaymentError,
     reset,
     setError,
+    skipContribution,
     simulatePayment: mockPayment ? simulatePayment : undefined,
   };
 }
-

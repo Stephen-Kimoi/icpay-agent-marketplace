@@ -1,0 +1,866 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  ArrowLeft,
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  CheckCircle,
+  Github,
+  Loader2,
+  Trophy,
+  TrendingUp,
+  Users,
+  Code2,
+  Activity,
+  GitBranch,
+  Link2,
+} from "lucide-react";
+import { scoreGitHub, scoreGitHubPublic, type GitHubScoreResult } from "@/services/githubScorerService";
+import { githubOAuthAuthorize, githubHasToken, githubGetUsername } from "@/services/githubOAuthService";
+import { userExistsInRankings } from "@/services/githubRankingService";
+import { usePaymentFlow } from "@/hooks/usePaymentFlow";
+import GitHubLeaderboard from "@/components/GitHubLeaderboard";
+// @ts-ignore - ICPay widget types may not be fully resolved
+import { IcpayPayButton } from "@ic-pay/icpay-widget/react";
+
+type ScoringResult = {
+  scoreResult: GitHubScoreResult;
+};
+
+export default function GitHubScorerAgent() {
+  const [githubHandle, setGithubHandle] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [fetchingUsername, setFetchingUsername] = useState(false);
+  const [scoringMode, setScoringMode] = useState<"connected" | "manual">("manual");
+  const [mockPaymentEnabled, setMockPaymentEnabled] = useState(false);
+  const [showContributionOptions, setShowContributionOptions] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+
+  const {
+    state,
+    quote,
+    paymentResult,
+    result,
+    error,
+    loading,
+    isProcessing,
+    icpayConfig,
+    requestQuote,
+    handlePaymentSuccess,
+    handlePaymentError,
+    reset,
+    setError,
+    simulatePayment,
+    skipContribution,
+  } = usePaymentFlow<ScoringResult>({
+    mockPayment: mockPaymentEnabled,
+    mockPrice: 0.60,
+    mockCurrency: "USD",
+  });
+
+  const scoreResult = result?.scoreResult ?? null;
+  const completed = state === "completed";
+
+  // Check GitHub connection status on mount and fetch username if connected
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const connected = await githubHasToken();
+        setIsConnected(connected);
+        if (!connected) {
+          setScoringMode("manual");
+        }
+        
+        // If connected, auto-fetch the GitHub username
+        if (connected) {
+          setFetchingUsername(true);
+          try {
+            const username = await githubGetUsername();
+            setGithubHandle(username);
+            setScoringMode((prev) => (prev === "manual" ? "connected" : prev));
+          } catch (err) {
+            console.error("Error fetching GitHub username:", err);
+            // Don't set error state, just leave handle empty
+          } finally {
+            setFetchingUsername(false);
+          }
+        }
+      } catch (err) {
+        console.error("Error checking GitHub connection:", err);
+        setIsConnected(false);
+        setScoringMode("manual");
+      } finally {
+        setCheckingConnection(false);
+      }
+    };
+    checkConnection();
+  }, []);
+  
+  const usingConnectedAccount = isConnected && scoringMode === "connected";
+
+  const handleConnectGitHub = async () => {
+    setConnecting(true);
+    try {
+      const authUrl = await githubOAuthAuthorize();
+      // Redirect to GitHub OAuth
+      window.location.href = authUrl.url;
+    } catch (err) {
+      console.error("Error initiating GitHub OAuth:", err);
+      setError(err instanceof Error ? err.message : "Failed to connect to GitHub");
+      setConnecting(false);
+    }
+  };
+
+  const quoteDescription = useMemo(() => {
+    if (usingConnectedAccount) {
+      return "Score your connected GitHub profile";
+    }
+    if (!githubHandle.trim()) {
+      return "";
+    }
+    const handle = githubHandle.trim().replace(/^@/, "");
+    return `Score GitHub profile "@${handle}"`;
+  }, [githubHandle, usingConnectedAccount]);
+
+  const handleQuoteRequest = async () => {
+    // Determine mode
+    if (!usingConnectedAccount) {
+      const handle = githubHandle.trim().replace(/^@/, "");
+      
+      if (!handle) {
+        setError("Please enter a GitHub handle to score.");
+        return;
+      }
+
+      if (!handle.match(/^[a-zA-Z0-9]([a-zA-Z0-9]|-(?![.-])){0,38}$/)) {
+        setError("Invalid GitHub handle format. Please enter a valid username.");
+        return;
+      }
+    }
+
+    // Check for duplicates before proceeding
+    try {
+      let handleToCheck = "";
+      if (usingConnectedAccount) {
+        // Get the connected user's handle
+        handleToCheck = await githubGetUsername();
+      } else {
+        handleToCheck = githubHandle.trim().replace(/^@/, "");
+      }
+
+      const exists = await userExistsInRankings(handleToCheck);
+      if (exists) {
+        setDuplicateWarning(`User @${handleToCheck} has already been ranked. The system will return existing results.`);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch (err) {
+      // Continue with scoring if duplicate check fails
+      setDuplicateWarning(null);
+    }
+
+    setError(null);
+
+    await requestQuote({
+      request: quoteDescription,
+      execute: async (jobId: string, quote: any) => {
+        console.log("Executing GitHub scoring for job:", jobId);
+
+        try {
+          let scoreResult: GitHubScoreResult;
+          if (usingConnectedAccount) {
+            scoreResult = await scoreGitHub({
+              githubHandle: "", // auto-detect on backend
+            });
+          } else {
+            scoreResult = await scoreGitHubPublic(githubHandle.trim());
+          }
+
+          console.log("GitHub scoring completed successfully");
+          return {
+            scoreResult,
+          };
+        } catch (error) {
+          console.error("Error during GitHub scoring execution:", error);
+          throw error;
+        }
+      },
+    });
+
+    // Show contribution options after getting quote
+    setShowContributionOptions(true);
+  };
+
+  const handleCopy = async () => {
+    if (!scoreResult?.details) return;
+    try {
+      await navigator.clipboard.writeText(scoreResult.details);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  const getRankPercentage = () => {
+    if (!scoreResult) return 0;
+    return Math.round(((scoreResult.totalUsers - scoreResult.rank + 1) / scoreResult.totalUsers) * 100);
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "text-green-400";
+    if (score >= 60) return "text-yellow-400";
+    if (score >= 40) return "text-orange-400";
+    return "text-red-400";
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-4 py-12 sm:px-8">
+        <header className="flex flex-col gap-6 rounded-3xl border border-gray-800/60 bg-gradient-to-br from-gray-900/90 via-gray-900/70 to-gray-950/90 p-8 backdrop-blur-xl">
+          <div className="flex items-center gap-4 text-sm text-gray-400">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-purple-300 transition hover:text-purple-200"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Marketplace
+            </Link>
+          </div>
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="inline-flex items-center gap-3 rounded-full border border-gray-800/70 bg-gray-900/70 px-5 py-2 text-sm text-gray-300">
+                <Trophy className="h-4 w-4 text-purple-300" />
+                Comprehensive GitHub profile analysis & ranking
+              </div>
+              <h1 className="text-4xl font-bold sm:text-5xl">
+                <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                  GitHub Scorer Agent
+                </span>
+              </h1>
+              <p className="mx-auto max-w-2xl text-base text-gray-400">
+                Get a comprehensive GitHub score based on commits, activity, languages, and contributions. 
+                Compare your rank against other developers. Free to use with optional contributions to support the project.
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <main className="grid gap-8 lg:grid-cols-[2fr,1fr]">
+          <section className="rounded-3xl border border-gray-800/70 bg-gray-950/60 p-8 backdrop-blur-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  Input your GitHub handle
+                </h2>
+                <p className="mt-2 text-sm text-gray-400">
+                  Enter your GitHub handle to enable scoring
+                </p>
+              </div>
+              <div className="hidden sm:block rounded-full bg-purple-500/10 p-3">
+                <Github className="h-6 w-6 text-purple-300" />
+              </div>
+            </div>
+
+            {/* GitHub Connection Status */}
+            {/* {!checkingConnection && (
+              <div className="mt-6 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6">
+                {isConnected ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-green-500/20 p-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          GitHub Connected
+                        </p>
+                        {fetchingUsername ? (
+                          <p className="text-xs text-gray-400">
+                            Fetching your GitHub username...
+                          </p>
+                        ) : githubHandle ? (
+                          <p className="text-xs text-gray-400">
+                            Connected as <span className="font-mono text-purple-300">@{githubHandle}</span>
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-400">
+                            You can now score your GitHub profile
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-yellow-500/20 p-2">
+                        <AlertCircle className="h-5 w-5 text-yellow-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          GitHub Not Connected
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Connect your GitHub account to enable scoring
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={handleConnectGitHub}
+                      disabled={connecting}
+                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:opacity-60"
+                    >
+                      {connecting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <Link2 className="h-4 w-4" />
+                          Connect GitHub
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )} */}
+
+            {/* Mode selection */}
+            {isConnected && (
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScoringMode("connected");
+                    setError(null);
+                  }}
+                  className={`rounded-2xl border px-4 py-4 text-left text-sm transition ${
+                    scoringMode === "connected"
+                      ? "border-purple-500/60 bg-purple-500/10 text-purple-100"
+                      : "border-gray-800/80 bg-gray-900/50 text-gray-400 hover:border-purple-500/40 hover:text-purple-100"
+                  }`}
+                >
+                  <p className="font-semibold">Use connected account</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Score the GitHub account you authorized via OAuth
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScoringMode("manual");
+                    setError(null);
+                  }}
+                  className={`rounded-2xl border px-4 py-4 text-left text-sm transition ${
+                    scoringMode === "manual"
+                      ? "border-purple-500/60 bg-purple-500/10 text-purple-100"
+                      : "border-gray-800/80 bg-gray-900/50 text-gray-400 hover:border-purple-500/40 hover:text-purple-100"
+                  }`}
+                >
+                  <p className="font-semibold">Score another username</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Enter any public GitHub handle without connecting
+                  </p>
+                </button>
+              </div>
+            )}
+
+            {(scoringMode === "manual" || !isConnected) && (
+              <div className="mt-6">
+                <label className="group relative flex flex-col rounded-2xl border border-gray-800/80 bg-gray-900/60 p-5 transition focus-within:border-purple-500/60 focus-within:ring-2 focus-within:ring-purple-500/40">
+                  <span className="text-sm font-semibold text-gray-200">
+                    GitHub Username
+                  </span>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="text-gray-500">@</span>
+                    <input
+                      type="text"
+                      value={githubHandle.replace(/^@/, "")}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/^@/g, "");
+                        setGithubHandle(value);
+                        setError(null);
+                        if (state !== "idle" && state !== "error") {
+                          reset();
+                        }
+                      }}
+                      placeholder="username"
+                      className="flex-1 rounded-xl border border-dashed border-gray-800/60 bg-gray-950/40 px-4 py-3 text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Enter any GitHub username (without @ symbol)
+                  </p>
+                </label>
+              </div>
+            )}
+
+            {/* <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-gray-800/70 bg-gray-900/60 p-5">
+              <label className="flex items-center gap-3 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-700 bg-gray-900 text-purple-500 focus:ring-purple-400"
+                  checked={mockPaymentEnabled}
+                  onChange={(e) => {
+                    setMockPaymentEnabled(e.target.checked);
+                    setError(null);
+                  }}
+                />
+                <span className="font-medium text-white">Enable mock contribution (no real ICP)</span>
+              </label>
+              <p className="text-xs text-gray-500">
+                When enabled, contributions are simulated so you can test the flow without sending real ICP.
+              </p>
+            </div> */}
+
+            {error && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+                <AlertCircle className="h-4 w-4 text-red-300" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {duplicateWarning && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+                <AlertCircle className="h-4 w-4 text-yellow-300" />
+                <span>{duplicateWarning}</span>
+              </div>
+            )}
+
+            <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-gray-800/70 bg-gray-900/50 p-6 text-sm text-gray-300 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-green-400" />
+                <span>Ready to analyze your GitHub profile!</span>
+              </div>
+              {state === "idle" || state === "error" || state === "completed" ? (
+                <Button
+                  onClick={handleQuoteRequest}
+                  disabled={
+                    (!usingConnectedAccount && !githubHandle.trim()) ||
+                    loading ||
+                    isProcessing ||
+                    (usingConnectedAccount && fetchingUsername)
+                  }
+                  className="bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] transition hover:from-purple-500 hover:via-pink-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Getting Quote...
+                    </span>
+                  ) : (
+                    "Analyze GitHub Profile"
+                  )}
+                </Button>
+              ) : state === "quoted" ? (
+                <div className="space-y-6">
+                  {/* Contribution Section */}
+                  <div className="relative overflow-hidden rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-blue-500/10 p-6 backdrop-blur-sm">
+                    {/* Background decoration */}
+                    <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-gradient-to-br from-purple-400/20 to-pink-400/20 blur-2xl"></div>
+                    <div className="absolute -bottom-6 -left-6 h-32 w-32 rounded-full bg-gradient-to-tr from-blue-400/15 to-purple-400/15 blur-3xl"></div>
+                    
+                    <div className="relative">
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-lg">
+                          💝
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-white">
+                            Support the Project
+                          </h3>
+                          <p className="text-sm text-purple-200/80">
+                            Optional • Help us keep improving
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <p className="mb-6 text-sm leading-relaxed text-gray-300">
+                        Your contribution helps maintain and improve this service for everyone. 
+                        <span className="font-semibold text-purple-200"> You can also skip and get your results completely free!</span>
+                      </p>
+
+
+                      {/* Action Buttons */}
+                      <div className="space-y-3">
+                        {mockPaymentEnabled ? (
+                          <Button
+                            onClick={async () => {
+                              if (simulatePayment) {
+                                await simulatePayment();
+                              }
+                            }}
+                            className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-700 px-6 py-4 text-base font-semibold shadow-[0_20px_40px_-12px_rgba(168,85,247,0.4)] transition-all duration-300 hover:scale-[1.02] hover:from-purple-500 hover:via-pink-500 hover:to-purple-600 hover:shadow-[0_25px_50px_-12px_rgba(168,85,247,0.6)]"
+                          >
+                            <span className="flex items-center justify-center gap-2">
+                              ✨ Pay
+                            </span>
+                          </Button>
+                        ) : icpayConfig ? (
+                          <div className="w-full min-h-[120px] rounded-lg overflow-hidden">
+                            <IcpayPayButton
+                              config={icpayConfig}
+                              onSuccess={handlePaymentSuccess}
+                              onError={handlePaymentError}
+                            />
+                          </div>
+                        ) : (
+                          <Button disabled className="w-full px-6 py-4 text-base opacity-60">
+                            <span className="flex items-center justify-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Preparing contribution...
+                            </span>
+                          </Button>
+                        )}
+                        
+                        <Button
+                          onClick={skipContribution}
+                          variant="outline"
+                          className="w-full border-2 border-gray-600/50 bg-gray-800/50 px-6 py-4 text-base font-medium text-gray-200 backdrop-blur-sm transition-all duration-300 hover:border-gray-500 hover:bg-gray-700/50 hover:text-white"
+                        >
+                          <span className="flex items-center justify-center gap-2">
+                            Skip & Get Results Free
+                          </span>
+                        </Button>
+                      </div>
+
+                      {/* Trust indicators */}
+                      <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />
+                          Secure payment
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />
+                          No hidden fees
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />
+                          Always optional
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : state === "waiting_for_payment" || state === "executing" ? (
+                <Button
+                  disabled
+                  className="flex-1 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 px-6 py-3 font-semibold shadow-[0_18px_45px_-18px_rgba(56,189,248,0.6)] disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {state === "waiting_for_payment" ? "Waiting for Payment" : "Analyzing GitHub..."}
+                  </span>
+                </Button>
+              ) : null}
+            </div>
+
+            {/* Quote display is now integrated into the contribution section above */}
+
+            {state === "waiting_for_payment" && (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-yellow-500/30 bg-gradient-to-r from-yellow-500/10 via-orange-500/10 to-yellow-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-orange-500">
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-yellow-100">Processing contribution...</p>
+                    <p className="text-xs text-yellow-200/80">Awaiting ICPay settlement</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {state === "executing" && (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-500">
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-100">Analyzing GitHub profile...</p>
+                    <p className="text-xs text-blue-200/80">Processing your data in the canister</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {paymentResult && completed && (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-green-500/30 bg-gradient-to-r from-green-500/10 via-emerald-500/10 to-green-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white">
+                    ✨
+                  </div>
+                  <div>
+                    <p className="font-semibold text-green-100">Thank you for your contribution!</p>
+                    <p className="text-xs text-green-200/80">
+                      Transaction ID: <span className="font-mono">{paymentResult.transactionId}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {completed && !paymentResult && (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 p-5 backdrop-blur-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-500 text-white">
+                    🚀
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-100">Analysis completed successfully!</p>
+                    <p className="text-xs text-blue-200/80">
+                      Consider supporting the project with a contribution next time 💜
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {scoreResult && completed && (
+              <div className="mt-8 rounded-3xl border border-purple-500/30 bg-purple-500/5 p-6">
+                <div className="mb-6 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-white">Score Results</h3>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleCopy}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-800/70 bg-gray-900/60 px-3 py-2 text-xs text-gray-300 transition hover:border-purple-500/40 hover:text-purple-200"
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-400" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={reset}
+                      className="text-xs text-purple-200/70 underline underline-offset-4 hover:text-purple-100"
+                    >
+                      Score another profile
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-6 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-6 text-center">
+                    <div className="mb-2 flex items-center justify-center gap-2 text-sm text-purple-300">
+                      <Trophy className="h-5 w-5" />
+                      <span>Overall Score</span>
+                    </div>
+                    <p className={`text-5xl font-bold ${getScoreColor(scoreResult.score)}`}>
+                      {scoreResult.score.toFixed(1)}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">out of 100</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-6 text-center">
+                    <div className="mb-2 flex items-center justify-center gap-2 text-sm text-blue-300">
+                      <TrendingUp className="h-5 w-5" />
+                      <span>Rank</span>
+                    </div>
+                    <p className="text-5xl font-bold text-blue-400">
+                      #{scoreResult.rank}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Top {getRankPercentage()}% of {scoreResult.totalUsers.toLocaleString()} users
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-6 rounded-2xl border border-gray-800/70 bg-gray-950/60 p-6">
+                  <h4 className="mb-4 text-sm font-semibold text-gray-200">Score Breakdown</h4>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="flex items-center gap-3">
+                      <Code2 className="h-5 w-5 text-purple-300" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Commits</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.commits.toFixed(1)} pts</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Activity className="h-5 w-5 text-purple-300" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Activity</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.activity.toFixed(1)} pts</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <GitBranch className="h-5 w-5 text-purple-300" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Languages</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.languages.toFixed(1)} pts</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Github className="h-5 w-5 text-purple-300" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Repositories</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.repositories.toFixed(1)} pts</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 sm:col-span-2">
+                      <Users className="h-5 w-5 text-purple-300" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Contributions</span>
+                          <span className="font-semibold text-purple-300">{scoreResult.breakdown.contributions.toFixed(1)} pts</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="prose prose-invert prose-sm max-w-none rounded-2xl border border-gray-800/70 bg-gray-950/60 p-6 text-gray-300">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({ children }) => (
+                        <h1 className="text-2xl font-bold text-white mb-4 mt-6 first:mt-0">
+                          {children}
+                        </h1>
+                      ),
+                      h2: ({ children }) => (
+                        <h2 className="text-xl font-semibold text-white mb-3 mt-5 first:mt-0">
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="text-lg font-semibold text-white mb-2 mt-4 first:mt-0">
+                          {children}
+                        </h3>
+                      ),
+                      p: ({ children }) => (
+                        <p className="mb-3 leading-relaxed">{children}</p>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="list-disc list-inside mb-3 space-y-1 ml-4">
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="list-decimal list-inside mb-3 space-y-1 ml-4">
+                          {children}
+                        </ol>
+                      ),
+                      li: ({ children }) => (
+                        <li className="mb-1">{children}</li>
+                      ),
+                      strong: ({ children }) => (
+                        <strong className="font-semibold text-white">{children}</strong>
+                      ),
+                      em: ({ children }) => (
+                        <em className="italic text-purple-200">{children}</em>
+                      ),
+                      code: ({ children }) => (
+                        <code className="bg-gray-900/50 text-purple-300 px-1.5 py-0.5 rounded text-xs font-mono">
+                          {children}
+                        </code>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-4 border-purple-500/50 pl-4 my-4 italic text-gray-400">
+                          {children}
+                        </blockquote>
+                      ),
+                    }}
+                  >
+                    {scoreResult.details}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <aside className="flex flex-col gap-6 rounded-3xl border border-gray-800/70 bg-gray-950/70 p-8 backdrop-blur-xl">
+            <div>
+              <h3 className="text-lg font-semibold text-white">
+                Scoring methodology
+              </h3>
+              <ul className="mt-4 space-y-3 text-sm text-gray-400">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 text-purple-300" />
+                  Commit frequency and consistency over time.
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 text-purple-300" />
+                  Activity patterns across repositories and projects.
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 text-purple-300" />
+                  Language diversity and technology stack breadth.
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 text-purple-300" />
+                  Repository quality, documentation, and maintenance.
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-1 h-4 w-4 text-purple-300" />
+                  Open source contributions and community engagement.
+                </li>
+              </ul>
+            </div>
+            {/* <div className="rounded-2xl border border-purple-500/40 bg-purple-500/5 p-6 text-sm text-purple-100">
+              <h4 className="text-xs uppercase tracking-widest text-purple-300/80">
+                Pro Tip
+              </h4>
+              <p className="mt-2 text-purple-200">
+                Your score updates in real-time as your GitHub activity grows. Use the PaymentAgent
+                workflow to schedule regular score checks and track your developer growth over time.
+              </p>
+            </div> */}
+            <div className="rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6 text-sm text-gray-300">
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <Trophy className="h-4 w-4 text-purple-300" />
+                Ranking system
+              </h4>
+              <ul className="mt-3 space-y-2 text-xs text-gray-400">
+                <li>• Compare your score against all users in the network</li>
+                <li>• Real-time ranking updates as new profiles are scored</li>
+              </ul>
+            </div>
+            {/* <div className="rounded-2xl border border-gray-800/70 bg-gray-900/60 p-6 text-sm text-gray-300">
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <Github className="h-4 w-4 text-purple-300" />
+                Privacy & Security
+              </h4>
+              <p className="mt-2 text-xs text-gray-500">
+                All GitHub data is processed securely inside ICP canisters. Your profile information
+                is only used for scoring and ranking purposes.
+              </p>
+            </div> */}
+          </aside>
+        </main>
+
+        {/* Leaderboard Section */}
+        <div className="mt-12">
+          <GitHubLeaderboard limit={20} showSearch={true} showStats={true} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
